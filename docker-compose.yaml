@@ -1,0 +1,30 @@
+version: '3.5'
+
+services:
+  db:
+    image: postgres
+    environment:
+      POSTGRES_DB: brocoin
+      POSTGRES_PASSWORD: secret
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - local-pgdata:/var/lib/postgresql/data/pgdata
+    networks:
+      - net0
+
+  app:
+    image: broski/broapi:latest
+    environment:
+      BROAPI_DB_DSN: postgresql+asyncpg://postgres:secret@db:5432/brocoin
+    ports:
+      - 8000:8000
+    depends_on:
+      - db
+    networks:
+      - net0
+
+networks:
+  net0:
+
+volumes:
+  local-pgdata:
