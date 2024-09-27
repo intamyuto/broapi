@@ -20,12 +20,16 @@ middleware = [
 
 app = FastAPI(middleware=middleware)
 
+whitelist = [
+    "/favicon.ico",
+    "/docs",
+    "/redoc"
+]
+
 @app.middleware('http')
 async def fitler_orgins(request: Request, call_next):
     origin = request.headers.get('Origin')
-    print(origin)
-    print(origins)
-    if origin not in origins:
+    if origin not in origins and request.url.path not in whitelist:
         return JSONResponse({'error': 'invalid origin'}, status_code=403)
     return await call_next(request)
 
