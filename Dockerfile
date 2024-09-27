@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir /app/wheels/* \
 COPY . /app/
 
 # Expose the port the app runs in
-EXPOSE 8000
+EXPOSE 8001
 
 # Define the command to start the container
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
