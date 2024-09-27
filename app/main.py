@@ -22,6 +22,7 @@ app = FastAPI(middleware=middleware)
 
 whitelist = [
     "/favicon.ico",
+    "/openapi.json",
     "/docs",
     "/redoc"
 ]
