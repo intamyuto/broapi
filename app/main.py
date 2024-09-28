@@ -5,7 +5,7 @@ from starlette.responses import JSONResponse
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 
-from .routers import users
+from .routers import users, pvp
 
 origins = os.getenv('BROAPI_ALLOW_ORIGINS').split(',')
 
@@ -36,5 +36,6 @@ async def fitler_orgins(request: Request, call_next):
 
 api = APIRouter()
 api.include_router(users.router)
+api.include_router(pvp.router)
 
 app.include_router(api, prefix='/api/v1')
