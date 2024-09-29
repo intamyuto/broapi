@@ -1,3 +1,4 @@
+from datetime import timedelta
 from uuid import UUID
 from enum import Enum
 
@@ -44,31 +45,40 @@ class AbilityScoresDelta(BaseModel):
 class LevelupRequest(BaseModel):
     abilities_delta: AbilityScoresDelta
 
+class CharacterEnergy(BaseModel):
+    remaining: int
+    maximum: int
+    time_to_restore: timedelta
+
 class CharacterProfile(BaseModel):
     abilities: AbilityScores
+    energy: CharacterEnergy
     level: int
     experience: int
     power: float
 
 class MatchCompetitioner(BaseModel):
     user_id: str
+    username: str
+    level: int
     power: float
+    abilities: AbilityScores
 
 class PVPMatch(BaseModel):
     match_id: UUID
     player: MatchCompetitioner
-    enemy: MatchCompetitioner
+    opponent: MatchCompetitioner
 
 class MatchResult(str, Enum):
     win = "win"
     lose = "lose"
 
-class MatchPrize(BaseModel):
+class MatchLoot(BaseModel):
     experience: int
     coins: int
 
 class PVPMatchResult(BaseModel):
     match_id: UUID
     result: MatchResult
-    prize: MatchPrize | None
+    prize: MatchLoot | None
 

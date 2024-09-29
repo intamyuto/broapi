@@ -1,3 +1,4 @@
+from datetime import timedelta
 from uuid import UUID
 
 from fastapi import Depends, HTTPException
@@ -12,7 +13,18 @@ router = APIRouter()
 
 @router.get("/users/{user_id}/character", tags=["pvp"])
 def get_character(user_id: str, session: AsyncSession = Depends(get_session)) -> domain.CharacterProfile:
-    return HTTPException(status_code=501, detail="not implemented")
+    # dummy
+    return domain.CharacterProfile(
+        user_id=user_id,
+        username='dummy',
+        level=1, experience=0, power=100.0,
+        abilities=domain.AbilityScores(strength=1, defence=1, speed=1, weight=1, combinations=1),
+        energy=domain.CharacterEnergy(
+            remaining=20,
+            maximum=100,
+            time_to_restore=timedelta(hours=2, minutes=10)
+        )
+    )
 
 @router.post("/users/{user_id}/levelup", tags=["pvp"])
 def level_up(request: domain.LevelupRequest, session: AsyncSession = Depends(get_session)) -> domain.AbilityScores:

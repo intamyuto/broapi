@@ -35,7 +35,7 @@ async def fitler_orgins(request: Request, call_next):
     return await call_next(request)
 
 api = APIRouter()
-api.include_router(users.router)
 api.include_router(pvp.router)
+api.include_router(users.router)
 
 app.include_router(api, prefix='/api/v1')
