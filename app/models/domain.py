@@ -2,6 +2,8 @@ from datetime import timedelta
 from uuid import UUID
 from enum import Enum
 
+import json
+
 from typing import Optional
 from pydantic import BaseModel
 
@@ -34,6 +36,17 @@ class AbilityScores(BaseModel):
     speed: int
     weight: int
     combinations: int
+
+    @classmethod
+    def default(cls):
+        return cls(strength=1, defence=1, speed=1, weight=1, combinations=1)
+    
+    def power(self) -> float:
+        return self.strength * 2.595 \
+            + self.defence * 2.3425 \
+            + self.speed * 2.27 \
+            + self.weight * 2.38 \
+            + self.combinations * 2.47
 
 class AbilityScoresDelta(BaseModel):
     strength: int | None
@@ -80,5 +93,5 @@ class MatchLoot(BaseModel):
 class PVPMatchResult(BaseModel):
     match_id: UUID
     result: MatchResult
-    prize: MatchLoot | None
+    loot: MatchLoot | None
 

@@ -1,8 +1,9 @@
 from uuid import UUID, uuid4
 from datetime import datetime
 
-from sqlmodel import SQLModel, Field
-from sqlalchemy import JSON, Column
+from sqlmodel import SQLModel, Field, MetaData
+from sqlalchemy import JSON, Column, DateTime
+from sqlalchemy.dialects.postgresql import JSONB
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
@@ -35,3 +36,20 @@ class ReferalScore(SQLModel, table=True):
 
     username: str = Field(primary_key=True)
     score: int
+
+class PVPCharacter(SQLModel, table=True):
+    __tablename__ = "characters"
+
+    metadata = MetaData(schema="pvp")
+
+    user_id: int = Field(primary_key=True)
+    username: str | None
+
+    abilities: dict = Field(sa_type=JSONB, nullable=False)
+    level: int
+    experience: int
+    power: float
+
+    ts_last_match: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    energy_last_match: int
+    energy_max: int
