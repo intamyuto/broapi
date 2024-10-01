@@ -2,7 +2,7 @@ from datetime import timedelta
 from uuid import UUID
 from enum import Enum
 
-import json
+import math
 
 from typing import Optional
 from pydantic import BaseModel
@@ -29,6 +29,20 @@ class CreateUser(BaseModel):
     ref_code: Optional[str] = None
     premium: Optional[bool] = None
 
+_coeffecients = {
+    'strength': 2.595,
+    'defence': 2.3425,
+    'speed': 2.270,
+    'weight': 2.380,
+    'combinations': 2.470
+}
+
+class AbilityScoresDelta(BaseModel):
+    strength: int | None = None
+    defence: int | None = None
+    speed: int | None = None
+    weight: int | None = None
+    combinations: int | None = None
 
 class AbilityScores(BaseModel):
     strength: int
@@ -42,21 +56,47 @@ class AbilityScores(BaseModel):
         return cls(strength=1, defence=1, speed=1, weight=1, combinations=1)
     
     def power(self) -> float:
-        return self.strength * 2.595 \
-            + self.defence * 2.3425 \
-            + self.speed * 2.27 \
-            + self.weight * 2.38 \
-            + self.combinations * 2.47
+        return self.strength * _coeffecients['strength'] \
+            + self.defence * _coeffecients['defence'] \
+            + self.speed * _coeffecients['speed'] \
+            + self.weight * _coeffecients['weight'] \
+            + self.combinations * _coeffecients['combinations']
 
-class AbilityScoresDelta(BaseModel):
-    strength: int | None
-    defence: int | None
-    speed: int | None
-    weight: int | None
-    combinations: int | None
+    def upgrade_cost(self, delta: AbilityScoresDelta) -> int:
+        cost = 0
+        if delta.strength is not None:
+            cost += self._ability_cost('strength', self.strength + delta.strength)
+        if delta.defence is not None:
+            cost += self._ability_cost('defence', self.defence + delta.defence)
+        if delta.speed is not None:
+            cost += self._ability_cost('speed', self.speed + delta.speed)
+        if delta.weight is not None:
+            cost += self._ability_cost('weight', self.weight + delta.weight)
+        if delta.combinations is not None:
+            cost += self._ability_cost('combinations', self.combinations + delta.combinations)
+        return cost
+    
+    def upgrade(self, delta: AbilityScoresDelta):
+        if delta.strength:
+            self.strength += delta.strength
+        if delta.defence:
+            self.defence += delta.defence
+        if delta.speed:
+            self.speed += delta.speed
+        if delta.weight:
+            self.weight += delta.weight
+        if delta.combinations:
+            self.combinations += delta.combinations
 
-class LevelupRequest(BaseModel):
-    abilities_delta: AbilityScoresDelta
+    def _ability_cost(self, ability_name: str, level_target: int) -> int:
+        level_current, cost = getattr(self, ability_name), 0
+        for level in range(level_current, level_target):
+            cost += math.pow(level, _coeffecients[ability_name])
+        return math.floor(cost)
+    
+class LevelupResponse(BaseModel):
+    abilities: AbilityScores
+    power: float
 
 class CharacterEnergy(BaseModel):
     remaining: int

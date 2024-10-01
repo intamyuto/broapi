@@ -47,8 +47,34 @@ async def get_character(user_id: int, session: AsyncSession = Depends(get_sessio
     return _convert_from_db_character(db_character)
 
 @router.post("/users/{user_id}/levelup", tags=["pvp"])
-def level_up(request: domain.LevelupRequest, session: AsyncSession = Depends(get_session)) -> domain.AbilityScores:
-    return HTTPException(status_code=501, detail="not implemented")
+async def level_up(user_id: int, delta: domain.AbilityScoresDelta | None = None, session: AsyncSession = Depends(get_session)) -> domain.LevelupResponse:
+    try:
+        character_scalar = await session.exec(
+            select(db.PVPCharacter).where(db.PVPCharacter.user_id == user_id)
+        )
+        db_character = character_scalar.one()
+        abilities = domain.AbilityScores(**db_character.abilities)
+        levelup_cost = abilities.upgrade_cost(delta)
+
+        user_scalar = await session.exec(
+            select(db.User).where(db.User.ref_code == str(user_id))
+        )
+        db_user = user_scalar.one()
+        db_user.score = db_user.score - levelup_cost
+
+        if db_user.score < 0:
+            raise HTTPException(status_code=400, detail=f"insufficient coins; need another {int(math.fabs(db_user.score))}")
+        
+        abilities.upgrade(delta)
+        db_character.abilities = abilities.model_dump(mode='json')
+        db_character.power = abilities.power()
+    
+        session.add(db_user)
+        session.add(db_character)
+        await session.commit()
+        return domain.LevelupResponse(abilities=abilities, power=db_character.power)
+    except NoResultFound:
+        raise HTTPException(status_code=404, detail="user or character not found")
 
 @router.post("/users/{user_id}/pvp", tags=["pvp"])
 def search_match(user_id: str, session: AsyncSession = Depends(get_session)) -> domain.PVPMatch:
