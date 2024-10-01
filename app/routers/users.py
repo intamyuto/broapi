@@ -55,10 +55,10 @@ async def post_user(user: domain.CreateUser, session: AsyncSession = Depends(get
                 ref_user.refs['id'].append(user.user_id)
                 flag_modified(ref_user, 'refs')
                 if user.premium:
-                    ref_user.tickets += 12
+                    ref_user.tickets += 3
                     ref_user.score += 50
                 else:
-                    ref_user.tickets += 3
+                    ref_user.tickets += 1
                 session.add(ref_user)
 
     await session.commit()
