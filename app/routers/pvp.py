@@ -75,7 +75,7 @@ async def level_up(user_id: int, delta: domain.AbilityScoresDelta | None = None,
         session.add(db_user)
         session.add(db_character)
         await session.commit()
-        return domain.LevelupResponse(abilities=abilities, power=db_character.power)
+        return domain.LevelupResponse(abilities=abilities, power=math.floor(db_character.power))
     except NoResultFound:
         raise HTTPException(status_code=404, detail="user or character not found")
 
@@ -194,7 +194,7 @@ def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfi
         username=db_obj.username,
         level=db_obj.level, 
         experience=db_obj.experience,
-        power=db_obj.power,
+        power=math.floor(db_obj.power),
         abilities=domain.AbilityScores(**db_obj.abilities),
         energy=domain.CharacterEnergy(
             remaining=remaining_energy,
@@ -208,7 +208,7 @@ def _convert_to_match_competitioner(db_obj: db.PVPCharacter) -> domain.MatchComp
         user_id=db_obj.user_id,
         username=db_obj.username,
         level=db_obj.level,
-        power=db_obj.power,
+        power=math.floor(db_obj.power),
         abilities=domain.AbilityScores(**db_obj.abilities),
     )
 

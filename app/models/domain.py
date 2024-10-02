@@ -96,7 +96,7 @@ class AbilityScores(BaseModel):
     
 class LevelupResponse(BaseModel):
     abilities: AbilityScores
-    power: float
+    power: int
 
 class CharacterEnergy(BaseModel):
     remaining: int
@@ -108,13 +108,13 @@ class CharacterProfile(BaseModel):
     energy: CharacterEnergy
     level: int
     experience: int
-    power: float
+    power: int
 
 class MatchCompetitioner(BaseModel):
     user_id: int
     username: str
     level: int
-    power: float
+    power: int
     abilities: AbilityScores
 
 class PVPMatch(BaseModel):
