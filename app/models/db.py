@@ -48,6 +48,8 @@ class PVPCharacter(SQLModel, table=True):
     user_id: int = Field(primary_key=True)
     username: str | None
 
+    ts_updated: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
     abilities: dict = Field(sa_type=JSONB, nullable=False)
     level: int
     experience: int
@@ -56,6 +58,10 @@ class PVPCharacter(SQLModel, table=True):
     ts_last_match: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     energy_last_match: int
     energy_max: int
+    energy_boost: int
+
+    ts_invulnerable_until: datetime | None = Field(sa_column=Column(DateTime(timezone=True), nullable=True))
+    ts_defences_today: int 
 
 class MatchResult(str, enum.Enum):
     win = 'win'

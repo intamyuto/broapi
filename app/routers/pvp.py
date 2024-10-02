@@ -9,7 +9,7 @@ from fastapi import APIRouter
 
 from sqlalchemy.orm import load_only
 from sqlalchemy.exc import NoResultFound
-from sqlalchemy import tablesample, func
+from sqlalchemy import tablesample, func, or_, and_
 from sqlalchemy.orm import aliased
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
@@ -98,6 +98,7 @@ async def search_match(user_id: int, session: AsyncSession = Depends(get_session
             opponent = await _search_opponent(player.user_id, session=session)
             db_match = db.PVPMatch(
                 uuid=uuid4(),
+
                 ts_created=datetime.now(timezone.utc),
                 ts_updated=datetime.now(timezone.utc),
 
@@ -128,9 +129,32 @@ async def skip_match(match_id: UUID, session: AsyncSession = Depends(get_session
         )
         db_match = match_scalar.one()
 
+        opponent_scalar = await session.exec(
+            select(db.PVPCharacter).where(db.PVPCharacter.user_id == db_match.opponent_id).options(
+                load_only(db.PVPCharacter.ts_invulnerable_until)
+            )
+        )
+        db_opponent = opponent_scalar.one()
+        db_opponent.ts_invulnerable_until = None
+
+        user_scalar = await session.exec(
+            select(db.User).where(db.User.ref_code == str(db_match.player_id))
+                .options(
+                    load_only(db.User.tickets)
+                )
+        )
+        db_user = user_scalar.one()
+
+        if db_user.tickets < 3:
+            raise HTTPException(status_code=404, detail="insufficient tickets")
+        db_user.tickets -= 3
+
         opponent = await _search_opponent(db_match.player_id, session=session)
+        db_match.ts_updated = datetime.now(timezone.utc)
         db_match.opponent_id = opponent.user_id
         
+        session.add(db_opponent)
+        session.add(db_user)
         session.add(db_match)
         await session.commit()
         return opponent
@@ -142,19 +166,72 @@ async def skip_match(match_id: UUID, session: AsyncSession = Depends(get_session
 async def start_match(match_id: UUID, session: AsyncSession = Depends(get_session)) -> domain.PVPMatchResult:
     try: 
         match_scalar = await session.exec(
-            select(db.PVPMatch).where(db.PVPMatch.uuid==match_id)
+            select(db.PVPMatch).where(db.PVPMatch.uuid==match_id).options(
+                load_only(db.PVPMatch.player_id, db.PVPMatch.opponent_id, db.PVPMatch.ts_updated, db.PVPMatch.ts_finished)
+            )
         )
         db_match = match_scalar.one()
 
         if db_match.ts_finished is not None:
-            raise HTTPException(status_code=404, detail="match finished")
+            raise HTTPException(status_code=404, detail="match already finished")
+        
+        ts_now = datetime.now(timezone.utc)
+        if db_match.ts_updated + timedelta(minutes=30) < ts_now:
+            raise HTTPException(status_code=400, detail="match expired; find new opponent")
+
+        player_scalar = await session.exec(
+            select(db.PVPCharacter).where(db.PVPCharacter.user_id == db_match.player_id)
+        )
+        db_player = player_scalar.one()
+
+        # energy calculation is incorrect >_<
+        if db_player.energy_boost > 0:
+            db_player.energy_boost =- 1
+        else:
+            energy = _calc_remaining_energy(db_player.energy_last_match, db_player.energy_max, db_player.ts_last_match, ts_now)
+            if energy < 1:
+                raise HTTPException(status_code=400, detail="insufficient energy")
+            
+            db_player.energy_last_match = energy - 1
+            db_player.ts_last_match = ts_now
+
+        opponent_scalar = await session.exec(
+            select(db.PVPCharacter).where(db.PVPCharacter.user_id == db_match.opponent_id).options(
+                load_only(db.PVPCharacter.power, db.PVPCharacter.ts_defences_today, db.PVPCharacter.ts_updated)
+            )
+        )
+        db_opponent = opponent_scalar.one()
 
         coins = 500
 
+        # todo: battle logic (╯°□°)╯︵ ┻━┻
+
+        # ┬─┬ノ( º _ ºノ)
+
         db_match.result = db.MatchResult.win
-        db_match.ts_finished = datetime.now(timezone.utc)
+        db_match.ts_updated = ts_now
+        db_match.ts_finished = ts_now
         db_match.loot = { 'coins': coins }
-        
+
+        user_scalar = await session.exec(
+            select(db.User).where(db.User.ref_code == str(db_match.player_id)).options(load_only(db.User.score))
+        )
+        db_user = user_scalar.one()
+
+        db_user.score += coins
+
+        #  2 hours invulnerability after defence
+        db_opponent.ts_invulnerable_until = ts_now + timedelta(hours=2)
+        db_opponent.ts_defences_today += 1
+        # if more the 5 defences per day — invulnerable for the day
+        if db_opponent.ts_defences_today >= 5:
+            today = ts_now.date()
+            db_opponent.ts_invulnerable_until = datetime(today.year, today.month, today.day + 1, tzinfo=timezone.utc)
+            db_opponent.ts_defences_today = 0
+
+        session.add(db_opponent)
+        session.add(db_user)
+        session.add(db_player)
         session.add(db_match)
         await session.commit()
 
@@ -167,22 +244,35 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
         raise HTTPException(status_code=404, detail="match not found")
 
 async def _search_opponent(player_id: int, session: AsyncSession) -> domain.MatchCompetitioner:
-    # todo: character not staged to battle
-    # todo: less then 5 matches for 24h
-    # todo: last battle more then 2 hours ago
-
     sample = tablesample(db.PVPCharacter, func.bernoulli(100), name='sample', seed=func.random())
     opponent_id_scalar = await session.exec(
-        select(sample.c.user_id).where(sample.c.user_id != player_id)
+        select(sample.c.user_id).where(
+            and_(sample.c.user_id != player_id, 
+                or_(db.PVPCharacter.ts_invulnerable_until == None, 
+                    db.PVPCharacter.ts_invulnerable_until < datetime.now(timezone.utc)
+                )
+            )
+        )
     )
-    opponent_id = random.choice(opponent_id_scalar.all())
+    opponent_ids = opponent_id_scalar.all()
+    opponent_id = random.choice(opponent_ids)
 
     opponent_scalar = await session.exec(
-        select(db.PVPCharacter).where(db.PVPCharacter.user_id == opponent_id).options(
-                load_only(db.PVPCharacter.user_id, db.PVPCharacter.username, db.PVPCharacter.level, db.PVPCharacter.abilities, db.PVPCharacter.power)
+        select(db.PVPCharacter)
+            .where(db.PVPCharacter.user_id == opponent_id)
+            .options(
+                load_only(db.PVPCharacter.user_id, db.PVPCharacter.username, db.PVPCharacter.level, db.PVPCharacter.abilities, db.PVPCharacter.power, db.PVPCharacter.ts_invulnerable_until)
             )
         )
     db_opponent = opponent_scalar.one()
+
+    # reserve character for 30min
+    ts_now = datetime.now(timezone.utc)
+    ts_invulnerable_until = ts_now + timedelta(minutes=30)
+    db_opponent.ts_invulnerable_until = ts_invulnerable_until
+    db_opponent.ts_updated = ts_now
+    session.add(db_opponent)
+
     return _convert_to_match_competitioner(db_opponent)
 
 def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfile:
