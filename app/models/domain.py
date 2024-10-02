@@ -111,7 +111,7 @@ class CharacterProfile(BaseModel):
     power: float
 
 class MatchCompetitioner(BaseModel):
-    user_id: str
+    user_id: int
     username: str
     level: int
     power: float
@@ -127,11 +127,9 @@ class MatchResult(str, Enum):
     lose = "lose"
 
 class MatchLoot(BaseModel):
-    experience: int
     coins: int
 
 class PVPMatchResult(BaseModel):
-    match_id: UUID
     result: MatchResult
     loot: MatchLoot | None
 

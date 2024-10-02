@@ -1,9 +1,12 @@
 from uuid import UUID, uuid4
 from datetime import datetime
 
-from sqlmodel import SQLModel, Field, MetaData
+import enum
+
+from sqlmodel import SQLModel, Field, MetaData, Enum
 from sqlalchemy import JSON, Column, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
+
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
@@ -53,3 +56,23 @@ class PVPCharacter(SQLModel, table=True):
     ts_last_match: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     energy_last_match: int
     energy_max: int
+
+class MatchResult(str, enum.Enum):
+    win = 'win'
+    lose = 'lose'
+
+class PVPMatch(SQLModel, table=True):
+    __tablename__ = 'matches'
+
+    metadata = MetaData(schema="pvp")
+
+    uuid: UUID = Field(default_factory=uuid4, primary_key=True, index=True, nullable=False)
+    ts_created: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+    ts_updated: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
+
+    player_id: int # = Field(foreign_key="characters.user_id")
+    opponent_id: int # = Field(foreign_key="characters.user_id")
+
+    ts_finished: datetime | None = Field(sa_column=Column(DateTime(timezone=True), nullable=True))
+    result: MatchResult | None = Field(sa_column=Column(Enum(MatchResult, name="match_result", inherit_schema=True), nullable=True))
+    loot: dict = Field(sa_type=JSONB, nullable=True)
