@@ -68,13 +68,12 @@ async def post_user(user: domain.CreateUser, session: AsyncSession = Depends(get
 @router.post("/stars", tags=["users"])
 async def get_stars_link(energy: domain.GetEnergy) -> domain.GetEnergyResponse:
     if int(energy.energy) == 1:
-        return 'https://t.me/$2-dS-iy_6EtMCwAAJk_mP8_3zo4'
+        return domain.GetEnergyResponse(link='https://t.me/$2-dS-iy_6EtMCwAAJk_mP8_3zo4')
     if int(energy.energy) == 5:
-        return 'https://t.me/$GLpUESy_6EtNCwAA1opihUX-9zg'
+        return domain.GetEnergyResponse(link='https://t.me/$GLpUESy_6EtNCwAA1opihUX-9zg')
     if int(energy.energy) == 20:
-        return 'https://t.me/$B6wxwyy_6EtOCwAAhKc_p9CtVJc'
-
-
+        return domain.GetEnergyResponse(link='https://t.me/$B6wxwyy_6EtOCwAAhKc_p9CtVJc')
+    raise HTTPException(status_code=400, detail="invalid energy amount")
 
 def _convert_from_db_user(user: db.User) -> domain.User:
     # original algorithm as is
