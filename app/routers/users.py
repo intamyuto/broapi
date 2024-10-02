@@ -65,8 +65,8 @@ async def post_user(user: domain.CreateUser, session: AsyncSession = Depends(get
     return _convert_from_db_user(db_user)
 
 
-@router.get("/stars", tags=["users"])
-async def post_user(energy: domain.GetEnergy):
+@router.post("/stars", tags=["users"])
+async def get_stars_link(energy: domain.GetEnergy) -> domain.GetEnergyResponse:
     if int(energy.energy) == 1:
         return 'https://t.me/$2-dS-iy_6EtMCwAAJk_mP8_3zo4'
     if int(energy.energy) == 5:

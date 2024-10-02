@@ -33,6 +33,9 @@ class CreateUser(BaseModel):
 class GetEnergy(BaseModel):
     energy: int
 
+class GetEnergyResponse(BaseModel):
+    link: str
+
 _coeffecients = {
     'strength': 2.595,
     'defence': 2.3425,
