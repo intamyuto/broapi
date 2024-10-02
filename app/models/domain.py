@@ -29,6 +29,10 @@ class CreateUser(BaseModel):
     ref_code: Optional[str] = None
     premium: Optional[bool] = None
 
+
+class GetEnergy(BaseModel):
+    energy: int
+
 _coeffecients = {
     'strength': 2.595,
     'defence': 2.3425,
