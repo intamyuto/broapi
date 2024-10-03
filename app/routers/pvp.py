@@ -10,7 +10,6 @@ from fastapi import APIRouter
 from sqlalchemy.orm import load_only
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy import tablesample, func, or_, and_
-from sqlalchemy.orm import aliased
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 
@@ -186,7 +185,7 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
 
         # energy calculation is incorrect >_<
         if db_player.energy_boost > 0:
-            db_player.energy_boost =- 1
+            db_player.energy_boost = db_player.energy_boost - 1
         else:
             energy = _calc_remaining_energy(db_player.energy_last_match, db_player.energy_max, db_player.ts_last_match, ts_now)
             if energy < 1:
@@ -204,14 +203,18 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
 
         coins = 500
 
-        # todo: battle logic (╯°□°)╯︵ ┻━┻
-
+        # battle logic (╯°□°)╯︵ ┻━┻
+        match_result, stats = _calculate_match_result(db_player, db_opponent)
         # ┬─┬ノ( º _ ºノ)
 
-        db_match.result = db.MatchResult.win
+        db_match.result = match_result
         db_match.ts_updated = ts_now
         db_match.ts_finished = ts_now
-        db_match.loot = { 'coins': coins }
+
+        db_match.loot = None
+        if db_match.result == db.MatchResult.win:
+            db_match.loot = { 'coins': coins }   
+        db_match.stats = stats 
 
         user_scalar = await session.exec(
             select(db.User).where(db.User.ref_code == str(db_match.player_id)).options(load_only(db.User.score))
@@ -235,10 +238,13 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
         session.add(db_match)
         await session.commit()
 
-        return domain.PVPMatchResult(
-            result=domain.MatchResult.win, 
-            loot=domain.MatchLoot(coins=coins),
+        result = domain.PVPMatchResult(
+            result=domain.MatchResult.win if db_match.result == db.MatchResult.win else domain.MatchResult.lose, 
         )
+        if db_match.loot:
+            result.loot = domain.MatchLoot(**db_match.loot)
+
+        return result
     
     except NoResultFound:
         raise HTTPException(status_code=404, detail="match not found")
@@ -248,13 +254,15 @@ async def _search_opponent(player_id: int, session: AsyncSession) -> domain.Matc
     opponent_id_scalar = await session.exec(
         select(sample.c.user_id).where(
             and_(sample.c.user_id != player_id, 
-                or_(db.PVPCharacter.ts_invulnerable_until == None, 
-                    db.PVPCharacter.ts_invulnerable_until < datetime.now(timezone.utc)
+                or_(sample.c.ts_invulnerable_until == None, 
+                    sample.c.ts_invulnerable_until < func.now()
                 )
             )
         )
     )
     opponent_ids = opponent_id_scalar.all()
+    if not opponent_ids:
+        raise HTTPException(status_code=400, detail="no available opponents; please wait")
     opponent_id = random.choice(opponent_ids)
 
     opponent_scalar = await session.exec(
@@ -316,3 +324,46 @@ def _calc_time_to_restore(energy, maximum: int) -> timedelta:
     if energy == maximum:
         return timedelta()
     return timedelta(hours=(float(maximum) - float(energy)) / ENERGY_RESTORE_SPEED)
+
+def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter) -> tuple[db.MatchResult, dict]:
+    champion, contestant = opponent, player
+    if champion.power < contestant.power:
+        champion, contestant = contestant, champion
+
+    gap = (champion.power - contestant.power) / champion.power
+
+    alpha, p = 1.0, .5
+    if gap > 0.5:
+        p = 1.0
+    elif gap > 0.3:
+        alpha = 3.5
+    elif gap > 0.2:
+        alpha = 2.5
+    elif gap > 0.1:
+        alpha = 2.0
+    
+    stats = {
+        'player_id': player.user_id,
+        'opponent_id': opponent.user_id,
+        'champion': champion.user_id,
+        'gap': f'{gap:.4f}'
+    }
+
+    if p == 1.0:
+        result = db.MatchResult.win if champion == player else db.MatchResult.lose
+        stats['p'] = '1.0000'
+        stats['result'] = result
+        return result, stats
+    
+    p = champion.power * (1 + gap ** alpha) / (champion.power + contestant.power)
+    dice_roll = random.random()
+
+    stats['p'] = f'{p:.4f}'
+    stats['dice_roll'] = f'{dice_roll:.4f}'
+
+    result = db.MatchResult.lose if champion == player else db.MatchResult.win
+    if dice_roll <= p: # champion wins
+        result = db.MatchResult.win if champion == player else db.MatchResult.lose
+
+    stats['result'] = result
+    return result, stats

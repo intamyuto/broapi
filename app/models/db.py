@@ -82,3 +82,5 @@ class PVPMatch(SQLModel, table=True):
     ts_finished: datetime | None = Field(sa_column=Column(DateTime(timezone=True), nullable=True))
     result: MatchResult | None = Field(sa_column=Column(Enum(MatchResult, name="match_result", inherit_schema=True), nullable=True))
     loot: dict = Field(sa_type=JSONB, nullable=True)
+
+    stats: dict = Field(sa_type=JSONB, nullable=True)
