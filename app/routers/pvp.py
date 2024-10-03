@@ -40,6 +40,9 @@ async def get_character(user_id: int, session: AsyncSession = Depends(get_sessio
                 ts_last_match=datetime.now(timezone.utc),
                 energy_last_match=2,
                 energy_max=2,
+                ts_updated=datetime.now(timezone.utc),
+                energy_boost=0,
+                ts_defences_today=0
             )
             session.add(db_character)
         except NoResultFound:

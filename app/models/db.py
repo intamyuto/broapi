@@ -4,7 +4,7 @@ from datetime import datetime
 import enum
 
 from sqlmodel import SQLModel, Field, MetaData, Enum
-from sqlalchemy import JSON, Column, DateTime
+from sqlalchemy import JSON, Column, DateTime, BigInteger
 from sqlalchemy.dialects.postgresql import JSONB
 
 
@@ -45,7 +45,7 @@ class PVPCharacter(SQLModel, table=True):
 
     metadata = MetaData(schema="pvp")
 
-    user_id: int = Field(primary_key=True)
+    user_id: int = Field(sa_column=Column(BigInteger(), primary_key=True))
     username: str | None
 
     ts_updated: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
