@@ -185,7 +185,7 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
             raise HTTPException(status_code=404, detail="match already finished")
         
         ts_now = datetime.now(timezone.utc)
-        if db_match.ts_updated + timedelta(minutes=30) < ts_now:
+        if db_match.ts_updated + timedelta(minutes=1) < ts_now:  # 30min
             raise HTTPException(status_code=400, detail="match expired; find new opponent")
 
         player_scalar = await session.exec(
@@ -234,10 +234,10 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
         db_user.score += coins
 
         #  2 hours invulnerability after defence
-        db_opponent.ts_invulnerable_until = ts_now + timedelta(hours=2)
+        db_opponent.ts_invulnerable_until = ts_now + timedelta(minutes=3)
         db_opponent.ts_defences_today += 1
         # if more the 5 defences per day — invulnerable for the day
-        if db_opponent.ts_defences_today >= 5:
+        if db_opponent.ts_defences_today >= 100: # 5
             today = ts_now.date()
             db_opponent.ts_invulnerable_until = datetime(today.year, today.month, today.day + 1, tzinfo=timezone.utc)
             db_opponent.ts_defences_today = 0
@@ -286,7 +286,7 @@ async def _search_opponent(player_id: int, session: AsyncSession) -> domain.Matc
 
     # reserve character for 30min
     ts_now = datetime.now(timezone.utc)
-    ts_invulnerable_until = ts_now + timedelta(minutes=30)
+    ts_invulnerable_until = ts_now + timedelta(minutes=1) # 30
     db_opponent.ts_invulnerable_until = ts_invulnerable_until
     db_opponent.ts_updated = ts_now
     session.add(db_opponent)
