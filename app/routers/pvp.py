@@ -107,6 +107,13 @@ async def search_match(user_id: int, session: AsyncSession = Depends(get_session
             session.add(db_match)
             await session.commit()
             return domain.PVPMatch(match_id=db_match.uuid, player=player, opponent=opponent)
+        
+        ts_now = datetime.now(timezone.utc)
+        if db_match.ts_updated + timedelta(minutes=30) < ts_now:
+            opponent = await _search_opponent(player.user_id, session=session)
+            db_match.opponent_id = opponent.user_id
+            db_match.ts_updated = ts_now
+            session.add(db_match)
 
         opponent_scalar = await session.exec(
             select(db.PVPCharacter).where(db.PVPCharacter.user_id == db_match.opponent_id).options(
