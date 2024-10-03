@@ -154,9 +154,9 @@ async def skip_match(match_id: UUID, session: AsyncSession = Depends(get_session
         )
         db_user = user_scalar.one()
 
-        if db_user.tickets < 3:
+        if db_user.tickets < 1:
             raise HTTPException(status_code=404, detail="insufficient tickets")
-        db_user.tickets -= 3
+        db_user.tickets -= 1
 
         opponent = await _search_opponent(db_match.player_id, session=session)
         db_match.ts_updated = datetime.now(timezone.utc)

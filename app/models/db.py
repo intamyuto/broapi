@@ -76,8 +76,8 @@ class PVPMatch(SQLModel, table=True):
     ts_created: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     ts_updated: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
-    player_id: int # = Field(foreign_key="characters.user_id")
-    opponent_id: int # = Field(foreign_key="characters.user_id")
+    player_id: int = Field(sa_column=Column(BigInteger()))
+    opponent_id: int = Field(sa_column=Column(BigInteger()))
 
     ts_finished: datetime | None = Field(sa_column=Column(DateTime(timezone=True), nullable=True))
     result: MatchResult | None = Field(sa_column=Column(Enum(MatchResult, name="match_result", inherit_schema=True), nullable=True))
