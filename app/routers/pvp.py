@@ -305,7 +305,7 @@ def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfi
         power=math.floor(db_obj.power),
         abilities=domain.AbilityScores(**db_obj.abilities),
         energy=domain.CharacterEnergy(
-            remaining=remaining_energy,
+            remaining=remaining_energy + db_obj.energy_boost,
             maximum=db_obj.energy_max,
             time_to_restore=time_to_restore,
         )
