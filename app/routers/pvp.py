@@ -33,7 +33,7 @@ async def get_character(user_id: int, session: AsyncSession = Depends(get_sessio
             abilities = domain.AbilityScores.default()
             db_character = db.PVPCharacter(
                 user_id=user_id,
-                username=db_user.username,
+                username="unnamed_bro" if not db_user.username else db_user.username,
                 abilities=abilities.model_dump(mode='json'),
                 power=abilities.power(),
                 level=1, experience=0,
@@ -185,7 +185,7 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
             raise HTTPException(status_code=404, detail="match already finished")
         
         ts_now = datetime.now(timezone.utc)
-        if db_match.ts_updated + timedelta(minutes=1) < ts_now:  # 30min
+        if db_match.ts_updated + timedelta(minutes=30) < ts_now:  
             raise HTTPException(status_code=400, detail="match expired; find new opponent")
 
         player_scalar = await session.exec(
@@ -286,7 +286,7 @@ async def _search_opponent(player_id: int, session: AsyncSession) -> domain.Matc
 
     # reserve character for 30min
     ts_now = datetime.now(timezone.utc)
-    ts_invulnerable_until = ts_now + timedelta(minutes=1) # 30
+    ts_invulnerable_until = ts_now + timedelta(minutes=30)
     db_opponent.ts_invulnerable_until = ts_invulnerable_until
     db_opponent.ts_updated = ts_now
     session.add(db_opponent)
