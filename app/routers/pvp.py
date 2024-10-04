@@ -222,11 +222,11 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
         db_match.loot = None
         if db_match.result == db.MatchResult.win:
             db_match.loot = { 'coins': 500 }
-            _change_score(db_match.player_id, 500, session=session)
+            await _change_score(db_match.player_id, 500, session=session)
         else:
             db_match.loot = { 'coins': -150 }
-            _change_score(db_match.opponent_id, 500, session=session)
-            _change_score(db_match.player_id, -150, session=session)
+            await _change_score(db_match.opponent_id, 500, session=session)
+            await _change_score(db_match.player_id, -150, session=session)
         
         db_match.stats = stats 
 
@@ -257,11 +257,11 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
     
 async def _change_score(user_id: int, amount: int, session: AsyncSession):
     user_scalar = await session.exec(
-        select(db.User).where(db.User.ref_code == str()).options(load_only(db.User.score))
+        select(db.User).where(db.User.ref_code == str(user_id)).options(load_only(db.User.score))
     )
     db_user = user_scalar.one()
 
-    db_user.score += amount
+    db_user.score = db_user.score + amount
     session.add(db_user)
 
 async def _search_opponent(player_id: int, session: AsyncSession) -> domain.MatchCompetitioner:
@@ -328,7 +328,10 @@ def _convert_to_match_competitioner(db_obj: db.PVPCharacter) -> domain.MatchComp
 ENERGY_RESTORE_SPEED = 4 # per hour
 
 def _calc_remaining_energy(energy_base: float, energy_max: int, ts_base: datetime, ts_now: datetime) -> float:
-    return min(energy_base + (ts_now - ts_base) / (timedelta(hours=1) * ENERGY_RESTORE_SPEED), energy_max)
+    return min(
+        energy_base + ((ts_now - ts_base) / timedelta(hours=1)) * ENERGY_RESTORE_SPEED, 
+        energy_max
+    )
 
 def _calc_time_to_restore(energy: float, maximum: int) -> timedelta:
     if energy >= maximum:
