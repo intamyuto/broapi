@@ -198,10 +198,10 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
             db_player.energy_boost = db_player.energy_boost - 1
         else:
             energy = _calc_remaining_energy(db_player.energy_last_match, db_player.energy_max, db_player.ts_last_match, ts_now)
-            if energy < 1:
+            if energy < 1.0:
                 raise HTTPException(status_code=400, detail="insufficient energy")
-            
-            db_player.energy_last_match = energy - 1
+
+            db_player.energy_last_match = energy - 1.0
             db_player.ts_last_match = ts_now
 
         opponent_scalar = await session.exec(
@@ -305,7 +305,7 @@ def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfi
         power=math.floor(db_obj.power),
         abilities=domain.AbilityScores(**db_obj.abilities),
         energy=domain.CharacterEnergy(
-            remaining=remaining_energy + db_obj.energy_boost,
+            remaining=math.floor(remaining_energy) + db_obj.energy_boost,
             maximum=db_obj.energy_max,
             time_to_restore=time_to_restore,
         )
@@ -320,20 +320,16 @@ def _convert_to_match_competitioner(db_obj: db.PVPCharacter) -> domain.MatchComp
         abilities=domain.AbilityScores(**db_obj.abilities),
     )
 
-ENERGY_RESTORE_SPEED = 1 # per hour
+ENERGY_RESTORE_SPEED = 4 # per hour
 
-def _calc_remaining_energy(energy_base, energy_max: int, ts_base, ts_now: datetime) -> int:
-    print(ts_now)
-    print(ts_base)
-    return min(energy_base + \
-        math.floor(
-            (ts_now - ts_base) / timedelta(hours=1) * ENERGY_RESTORE_SPEED
-        ), energy_max)
+def _calc_remaining_energy(energy_base: float, energy_max: int, ts_base: datetime, ts_now: datetime) -> float:
+    return min(energy_base + (ts_now - ts_base) / (timedelta(hours=1) * ENERGY_RESTORE_SPEED), energy_max)
 
-def _calc_time_to_restore(energy, maximum: int) -> timedelta:
-    if energy == maximum:
+def _calc_time_to_restore(energy: float, maximum: int) -> timedelta:
+    if energy >= maximum:
         return timedelta()
-    return timedelta(hours=(float(maximum) - float(energy)) / ENERGY_RESTORE_SPEED)
+    
+    return timedelta(hours=(1 - (energy - math.floor(energy))) / ENERGY_RESTORE_SPEED)
 
 def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter) -> tuple[db.MatchResult, dict]:
     champion, contestant = opponent, player
@@ -343,20 +339,26 @@ def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter) 
     gap = (champion.power - contestant.power) / champion.power
 
     alpha, p = 1.0, .5
-    if gap > 0.5:
+
+    if gap >= 0.75:
         p = 1.0
-    elif gap > 0.3:
-        alpha = 3.5
-    elif gap > 0.2:
-        alpha = 2.5
-    elif gap > 0.1:
+    elif gap >= 0.51:
+        alpha = 1.746
+    elif gap >= 0.49:
+        alpha = 1.8
+    elif gap > 0.44:
+        alpha = 1.9
+    else:
         alpha = 2.0
-    
+
     stats = {
         'player_id': player.user_id,
         'opponent_id': opponent.user_id,
         'champion': champion.user_id,
-        'gap': f'{gap:.4f}'
+        'champion_power': f'champion.power:.4f',
+        'contestant_power': f'contestant.power:.4f',
+        'gap': f'{gap:.4f}',
+        'alpha': f'{alpha:.2f}'
     }
 
     if p == 1.0:
@@ -365,7 +367,7 @@ def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter) 
         stats['result'] = result
         return result, stats
     
-    p = champion.power * (1 + gap ** alpha) / (champion.power + contestant.power)
+    p = champion.power * ((1 + gap) ** alpha) / (champion.power + contestant.power)
     dice_roll = random.random()
 
     stats['p'] = f'{p:.4f}'

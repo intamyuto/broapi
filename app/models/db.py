@@ -56,7 +56,7 @@ class PVPCharacter(SQLModel, table=True):
     power: float
 
     ts_last_match: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
-    energy_last_match: int
+    energy_last_match: float
     energy_max: int
     energy_boost: int
 
