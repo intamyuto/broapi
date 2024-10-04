@@ -211,8 +211,6 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
         )
         db_opponent = opponent_scalar.one()
 
-        coins = 500
-
         # battle logic (╯°□°)╯︵ ┻━┻
         match_result, stats = _calculate_match_result(db_player, db_opponent)
         # ┬─┬ノ( º _ ºノ)
@@ -223,15 +221,14 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
 
         db_match.loot = None
         if db_match.result == db.MatchResult.win:
-            db_match.loot = { 'coins': coins }   
+            db_match.loot = { 'coins': 500 }
+            _change_score(db_match.player_id, 500, session=session)
+        else:
+            db_match.loot = { 'coins': -150 }
+            _change_score(db_match.opponent_id, 500, session=session)
+            _change_score(db_match.player_id, -150, session=session)
+        
         db_match.stats = stats 
-
-        user_scalar = await session.exec(
-            select(db.User).where(db.User.ref_code == str(db_match.player_id)).options(load_only(db.User.score))
-        )
-        db_user = user_scalar.one()
-
-        db_user.score += coins
 
         #  2 hours invulnerability after defence
         db_opponent.ts_invulnerable_until = ts_now + timedelta(minutes=3)
@@ -243,7 +240,6 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
             db_opponent.ts_defences_today = 0
 
         session.add(db_opponent)
-        session.add(db_user)
         session.add(db_player)
         session.add(db_match)
         await session.commit()
@@ -258,6 +254,15 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
     
     except NoResultFound:
         raise HTTPException(status_code=404, detail="match not found")
+    
+async def _change_score(user_id: int, amount: int, session: AsyncSession):
+    user_scalar = await session.exec(
+        select(db.User).where(db.User.ref_code == str()).options(load_only(db.User.score))
+    )
+    db_user = user_scalar.one()
+
+    db_user.score += amount
+    session.add(db_user)
 
 async def _search_opponent(player_id: int, session: AsyncSession) -> domain.MatchCompetitioner:
     sample = tablesample(db.PVPCharacter, func.bernoulli(100), name='sample', seed=func.random())
