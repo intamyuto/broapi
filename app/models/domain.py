@@ -5,7 +5,7 @@ from enum import Enum
 import math
 
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class UserMining(BaseModel):
     left: str
@@ -99,7 +99,7 @@ class AbilityScores(BaseModel):
         level_current, cost = getattr(self, ability_name), 0
         for level in range(level_current, level_target):
             cost += math.pow(level, _coeffecients[ability_name])
-        return math.floor(cost)
+        return math.ceil(cost)
     
 class LevelupResponse(BaseModel):
     abilities: AbilityScores
@@ -138,5 +138,5 @@ class MatchLoot(BaseModel):
 
 class PVPMatchResult(BaseModel):
     result: MatchResult
-    loot: MatchLoot | None
+    loot: Optional[MatchLoot] = Field(None)
 

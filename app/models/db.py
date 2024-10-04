@@ -4,7 +4,7 @@ from datetime import datetime
 import enum
 
 from sqlmodel import SQLModel, Field, MetaData, Enum
-from sqlalchemy import JSON, Column, DateTime
+from sqlalchemy import JSON, Column, DateTime, BigInteger
 from sqlalchemy.dialects.postgresql import JSONB
 
 
@@ -45,8 +45,10 @@ class PVPCharacter(SQLModel, table=True):
 
     metadata = MetaData(schema="pvp")
 
-    user_id: int = Field(primary_key=True)
+    user_id: int = Field(sa_column=Column(BigInteger(), primary_key=True))
     username: str | None
+
+    ts_updated: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
     abilities: dict = Field(sa_type=JSONB, nullable=False)
     level: int
@@ -56,6 +58,10 @@ class PVPCharacter(SQLModel, table=True):
     ts_last_match: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     energy_last_match: int
     energy_max: int
+    energy_boost: int
+
+    ts_invulnerable_until: datetime | None = Field(sa_column=Column(DateTime(timezone=True), nullable=True))
+    ts_defences_today: int 
 
 class MatchResult(str, enum.Enum):
     win = 'win'
@@ -70,9 +76,11 @@ class PVPMatch(SQLModel, table=True):
     ts_created: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
     ts_updated: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
-    player_id: int # = Field(foreign_key="characters.user_id")
-    opponent_id: int # = Field(foreign_key="characters.user_id")
+    player_id: int = Field(sa_column=Column(BigInteger()))
+    opponent_id: int = Field(sa_column=Column(BigInteger()))
 
     ts_finished: datetime | None = Field(sa_column=Column(DateTime(timezone=True), nullable=True))
     result: MatchResult | None = Field(sa_column=Column(Enum(MatchResult, name="match_result", inherit_schema=True), nullable=True))
     loot: dict = Field(sa_type=JSONB, nullable=True)
+
+    stats: dict = Field(sa_type=JSONB, nullable=True)
