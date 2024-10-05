@@ -229,7 +229,12 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
         
         db_match.stats = stats 
 
-        message = f"You were attacked by {db_player.username}. You lost 0 $BRO, level-up your stat and fight! 👊"
+        message = f'''{db_player.username} ⚔️ attacked you.  
+You lost 0 $BRO because you're still in the early levels.
+
+Don't forget to level up your stats to win and earn $BRO in fights! 👊
+'''
+
         background_tasks.add_task(send_notifications, db_match.opponent_id, message)
 
         #  2 hours invulnerability after defence
