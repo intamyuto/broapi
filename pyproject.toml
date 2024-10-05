@@ -13,6 +13,7 @@ sqlmodel = "^0.0.22"
 sqlalchemy = {extras = ["postgresql-asyncpg"], version = "^2.0.35"}
 asyncpg = "^0.29.0"
 uuid = "^1.30"
+aiogram = "^3.13.1"
 
 
 [build-system]

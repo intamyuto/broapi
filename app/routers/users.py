@@ -16,7 +16,7 @@ router = APIRouter()
 @router.get("/users/{user_id}", tags=["users"])
 async def get_user(user_id: str, session: AsyncSession = Depends(get_session)) -> domain.User:
     try:
-        result = await session.exec(select(db.User).where(db.User.ref_code == user_id))
+        result = await session.exec(select(db.User).where(db.User.ref_code == user_id).limit(1))
         db_user = result.one()
         await session.commit()
 
@@ -26,7 +26,7 @@ async def get_user(user_id: str, session: AsyncSession = Depends(get_session)) -
     
 @router.post("/users", tags=["users"])
 async def post_user(user: domain.CreateUser, session: AsyncSession = Depends(get_session)) -> domain.User:
-    scalar_result = await session.exec(select(db.User).where(db.User.ref_code == user.user_id))
+    scalar_result = await session.exec(select(db.User).where(db.User.ref_code == user.user_id).limit(1))
     db_user = scalar_result.one_or_none()
     if not db_user:
         db_user = db.User()
@@ -49,7 +49,7 @@ async def post_user(user: domain.CreateUser, session: AsyncSession = Depends(get
         session.add(ref_score)
 
         if user.ref_code:
-            stmt = select(db.User).where(db.User.ref_code == user.ref_code)
+            stmt = select(db.User).where(db.User.ref_code == user.ref_code).limit(1)
             scalar_result = await session.exec(stmt)
             for ref_user in scalar_result:
                 ref_user.refs['id'].append(user.user_id)

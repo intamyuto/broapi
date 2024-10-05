@@ -4,8 +4,7 @@ from uuid import UUID, uuid4
 import math
 import random
 
-from fastapi import Depends, HTTPException
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from sqlalchemy.orm import load_only
 from sqlalchemy.exc import NoResultFound
@@ -13,7 +12,7 @@ from sqlalchemy import tablesample, func, or_, and_
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 
-from ..dependencies import get_session
+from ..dependencies import get_session, send_notifications
 from ..models import domain, db
 
 
@@ -26,7 +25,7 @@ async def get_character(user_id: int, session: AsyncSession = Depends(get_sessio
     if not db_character:
         try:
             user_scalar = await session.exec(
-                select(db.User).where(db.User.ref_code == str(user_id)).options(load_only(db.User.username))
+                select(db.User).where(db.User.ref_code == str(user_id)).limit(1).options(load_only(db.User.username))
             )
             db_user = user_scalar.one()
 
@@ -62,7 +61,7 @@ async def level_up(user_id: int, delta: domain.AbilityScoresDelta | None = None,
         levelup_cost = abilities.upgrade_cost(delta)
 
         user_scalar = await session.exec(
-            select(db.User).where(db.User.ref_code == str(user_id)).options(load_only(db.User.score))
+            select(db.User).where(db.User.ref_code == str(user_id)).limit(1).options(load_only(db.User.score))
         )
         db_user = user_scalar.one()
         db_user.score = db_user.score - levelup_cost
@@ -147,7 +146,7 @@ async def skip_match(match_id: UUID, session: AsyncSession = Depends(get_session
         db_opponent.ts_invulnerable_until = None
 
         user_scalar = await session.exec(
-            select(db.User).where(db.User.ref_code == str(db_match.player_id))
+            select(db.User).where(db.User.ref_code == str(db_match.player_id)).limit(1)
                 .options(
                     load_only(db.User.tickets)
                 )
@@ -172,7 +171,7 @@ async def skip_match(match_id: UUID, session: AsyncSession = Depends(get_session
         raise HTTPException(status_code=404, detail="match not found")
 
 @router.post("/pvp/{match_id}/start", tags=["pvp"])
-async def start_match(match_id: UUID, session: AsyncSession = Depends(get_session)) -> domain.PVPMatchResult:
+async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session: AsyncSession = Depends(get_session)) -> domain.PVPMatchResult:
     try: 
         match_scalar = await session.exec(
             select(db.PVPMatch).where(db.PVPMatch.uuid==match_id).options(
@@ -230,6 +229,9 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
         
         db_match.stats = stats 
 
+        message = f"You were attacked by {db_player.username}. You lost 0 $BRO, level-up your stat and fight! 👊"
+        background_tasks.add_task(send_notifications, db_match.opponent_id, message)
+
         #  2 hours invulnerability after defence
         db_opponent.ts_invulnerable_until = ts_now + timedelta(minutes=3)
         db_opponent.ts_defences_today += 1
@@ -257,7 +259,7 @@ async def start_match(match_id: UUID, session: AsyncSession = Depends(get_sessio
     
 async def _change_score(user_id: int, amount: int, session: AsyncSession):
     user_scalar = await session.exec(
-        select(db.User).where(db.User.ref_code == str(user_id)).options(load_only(db.User.score))
+        select(db.User).where(db.User.ref_code == str(user_id)).limit(1).options(load_only(db.User.score))
     )
     db_user = user_scalar.one()
 

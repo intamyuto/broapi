@@ -1,8 +1,12 @@
 import os
+import traceback
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.asyncio import create_async_engine
+
+from aiogram import Bot
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 dsn = os.environ['BROAPI_DB_DSN'] # "postgresql+asyncpg://postgres:secret@127.0.0.1:5432/brocoin"
 
@@ -14,3 +18,26 @@ async def get_session() -> AsyncSession: # type: ignore ¯\_(ツ)_/¯
     )
     async with async_session() as session:
         yield session
+
+
+bot_token = os.environ['BROAPI_BOT_TOKEN']
+
+bot = Bot(token=bot_token)
+
+notifications_whitelist = [181088439, 209247857]
+
+async def send_notifications(user_id: int, message: str):
+    if notifications_whitelist and user_id in notifications_whitelist:
+        try:
+            message = await bot.send_message(chat_id=user_id, text=message, reply_markup=bro_button())
+        except Exception:
+            traceback.print_exc()
+    
+
+def bro_button() -> InlineKeyboardBuilder:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="BROOOO! 👊",
+        url=f'https://t.me/itsbrocoinbot/BROSKI',
+    )
+    return builder.as_markup()
