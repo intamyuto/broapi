@@ -285,9 +285,13 @@ async def _change_level(user_id: int, amount: int, session: AsyncSession):
     current_exp = db_character.experience + amount
     db_character.experience = current_exp
 
-    exp_lvl = next((i for i in reversed(domain.exp_table) if current_exp - i >= 0), 0)
-    current_lvl = max(0, domain.exp_table.index(exp_lvl))
-    db_character.level = current_lvl
+    for i in domain.exp_table:
+        if current_exp - i >= 0:
+            pass
+        else:
+            current_lvl = domain.exp_table.index(i)
+            db_character.level = current_lvl
+            break
 
     session.add(db_character)
 
