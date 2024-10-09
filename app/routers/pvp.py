@@ -35,8 +35,8 @@ async def get_character(user_id: int, session: AsyncSession = Depends(get_sessio
                 username="unnamed_bro" if not db_user.username else db_user.username,
                 abilities=abilities.model_dump(mode='json'),
                 power=abilities.power(),
-                level=1,
-                experience=1,
+                level=0,
+                experience=0,
                 ts_last_match=datetime.now(timezone.utc),
                 energy_last_match=2,
                 energy_max=2,
@@ -213,7 +213,7 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
 
         opponent_scalar = await session.exec(
             select(db.PVPCharacter).where(db.PVPCharacter.user_id == db_match.opponent_id).options(
-                load_only(db.PVPCharacter.power, db.PVPCharacter.ts_defences_today, db.PVPCharacter.ts_updated)
+                load_only(db.PVPCharacter.power, db.PVPCharacter.level, db.PVPCharacter.ts_defences_today, db.PVPCharacter.ts_updated)
             )
         )
         db_opponent = opponent_scalar.one()
@@ -228,13 +228,18 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
 
         db_match.loot = None
         if db_match.result == db.MatchResult.win:
-            db_match.loot = { 'coins': 500 }
-            await _change_score(db_match.player_id, 500, session=session)
+            player_gain = _calc_coins_gain(db_player)
+
+            db_match.loot = { 'coins': player_gain }
+            await _change_score(db_match.player_id, player_gain, session=session)
             await _change_level(db_match.player_id, amount=1, session=session)
         else:
-            db_match.loot = { 'coins': -150 }
-            await _change_score(db_match.opponent_id, 500, session=session)
-            await _change_score(db_match.player_id, -150, session=session)
+            player_loss = _calc_coins_loss(db_player)
+            opponent_gain = _calc_coins_gain(db_opponent)
+
+            db_match.loot = { 'coins': player_loss }
+            await _change_score(db_match.player_id, player_loss, session=session)
+            await _change_score(db_match.opponent_id, opponent_gain, session=session)
         
         db_match.stats = stats 
 
@@ -270,7 +275,22 @@ Don't forget to level up your stats to win and earn $BRO in fights! 👊
     
     except NoResultFound:
         raise HTTPException(status_code=404, detail="match not found")
-
+    
+def _calc_coins_gain(player: db.PVPCharacter) -> int:
+    if player.level == 0:
+        return 150
+    elif player.level == 1:
+        return 250
+    else:
+        return 250 # return percent of opponent score
+    
+def _calc_coins_loss(player: db.PVPCharacter) -> int:
+    if player.level == 0:
+        return -30
+    elif player.level == 1:
+        return -50
+    else:
+        return -50 # percent of opponent score
 
 async def _change_score(user_id: int, amount: int, session: AsyncSession):
     user_scalar = await session.exec(
@@ -361,7 +381,6 @@ def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfi
 
 
 def _calc_exp(db_obj: db.PVPCharacter) -> domain.CharacterExperience:
-
     exp = db_obj.experience
     max_exp = 2
     for i in domain.exp_table:
@@ -370,6 +389,7 @@ def _calc_exp(db_obj: db.PVPCharacter) -> domain.CharacterExperience:
         else:
             max_exp = i
             break
+
     return domain.CharacterExperience(current_experience=exp, maximum_experience=max_exp)
 
 

@@ -122,7 +122,7 @@ class CharacterProfile(BaseModel):
     abilities: AbilityScores
     energy: CharacterEnergy
     level: int
-    experience: int
+    experience: CharacterExperience
     power: int
 
 class MatchCompetitioner(BaseModel):
