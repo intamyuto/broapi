@@ -36,6 +36,12 @@ class GetEnergy(BaseModel):
 class GetEnergyResponse(BaseModel):
     link: str
 
+
+class CharacterExperience(BaseModel):
+    current_experience: int
+    maximum_experience: int
+
+
 _coeffecients = {
     'strength': 2.595,
     'defence': 2.3425,
@@ -43,6 +49,8 @@ _coeffecients = {
     'weight': 2.380,
     'combinations': 2.470
 }
+
+exp_table = [2, 10, 25, 40, 60, 85, 110, 150, 225, 350, 555]
 
 class AbilityScoresDelta(BaseModel):
     strength: int | None = None

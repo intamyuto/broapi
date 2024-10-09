@@ -35,7 +35,8 @@ async def get_character(user_id: int, session: AsyncSession = Depends(get_sessio
                 username="unnamed_bro" if not db_user.username else db_user.username,
                 abilities=abilities.model_dump(mode='json'),
                 power=abilities.power(),
-                level=1, experience=0,
+                level=1,
+                experience=1,
                 ts_last_match=datetime.now(timezone.utc),
                 energy_last_match=2,
                 energy_max=2,
@@ -133,7 +134,7 @@ async def search_match(user_id: int, session: AsyncSession = Depends(get_session
 async def skip_match(match_id: UUID, session: AsyncSession = Depends(get_session)) -> domain.MatchCompetitioner:
     try: 
         match_scalar = await session.exec(
-            select(db.PVPMatch).where(db.PVPMatch.uuid==match_id)
+            select(db.PVPMatch).where(db.PVPMatch.uuid == match_id)
         )
         db_match = match_scalar.one()
 
@@ -222,6 +223,7 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
         if db_match.result == db.MatchResult.win:
             db_match.loot = { 'coins': 500 }
             await _change_score(db_match.player_id, 500, session=session)
+            await _change_level(db_match.player_id, amount=1, session=session)
         else:
             db_match.loot = { 'coins': -150 }
             await _change_score(db_match.opponent_id, 500, session=session)
@@ -261,7 +263,8 @@ Don't forget to level up your stats to win and earn $BRO in fights! 👊
     
     except NoResultFound:
         raise HTTPException(status_code=404, detail="match not found")
-    
+
+
 async def _change_score(user_id: int, amount: int, session: AsyncSession):
     user_scalar = await session.exec(
         select(db.User).where(db.User.ref_code == str(user_id)).limit(1).options(load_only(db.User.score))
@@ -270,6 +273,23 @@ async def _change_score(user_id: int, amount: int, session: AsyncSession):
 
     db_user.score = db_user.score + amount
     session.add(db_user)
+
+
+async def _change_level(user_id: int, amount: int, session: AsyncSession):
+    character = await session.exec(
+        select(db.PVPCharacter).where(db.PVPCharacter.user_id == user_id).options(
+            load_only(db.PVPCharacter.experience, db.PVPCharacter.level)
+        )
+    )
+    db_character = character.one()
+    current_exp = db_character.experience + amount
+    db_character.experience = current_exp
+
+    exp_lvl = next((i for i in reversed(domain.exp_table) if current_exp - i >= 0), 0)
+    current_lvl = max(0, domain.exp_table.index(exp_lvl) - 1)
+    db_character.level = current_lvl
+
+    session.add(db_character)
 
 async def _search_opponent(player_id: int, session: AsyncSession) -> domain.MatchCompetitioner:
     sample = tablesample(db.PVPCharacter, func.bernoulli(100), name='sample', seed=func.random())
@@ -309,11 +329,12 @@ def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfi
     ts_now = datetime.now(timezone.utc)
     remaining_energy = _calc_remaining_energy(db_obj.energy_last_match, db_obj.energy_max, db_obj.ts_last_match, ts_now)
     time_to_restore = _calc_time_to_restore(remaining_energy, db_obj.energy_max)
+    experience = _calc_exp(db_obj)
     return domain.CharacterProfile(
         user_id=db_obj.user_id,
         username=db_obj.username,
         level=db_obj.level, 
-        experience=db_obj.experience,
+        experience=experience,
         power=math.floor(db_obj.power),
         abilities=domain.AbilityScores(**db_obj.abilities),
         energy=domain.CharacterEnergy(
@@ -322,6 +343,21 @@ def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfi
             time_to_restore=time_to_restore,
         )
     )
+
+
+def _calc_exp(db_obj: db.PVPCharacter) -> domain.CharacterExperience:
+
+    exp = db_obj.experience
+    max_exp = 2
+    for i in domain.exp_table:
+        if exp - i >= 0:
+            pass
+        else:
+            max_exp = i
+            break
+    return domain.CharacterExperience(current_experience=exp, maximum_experience=max_exp)
+
+
 
 def _convert_to_match_competitioner(db_obj: db.PVPCharacter) -> domain.MatchCompetitioner:
     return domain.MatchCompetitioner(
@@ -339,6 +375,8 @@ def _calc_remaining_energy(energy_base: float, energy_max: int, ts_base: datetim
         energy_base + ((ts_now - ts_base) / timedelta(hours=1)) * ENERGY_RESTORE_SPEED, 
         energy_max
     )
+
+
 
 def _calc_time_to_restore(energy: float, maximum: int) -> timedelta:
     if energy >= maximum:
