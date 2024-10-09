@@ -436,7 +436,11 @@ def _calc_exp(db_obj: db.PVPCharacter) -> domain.CharacterExperience:
             max_exp = i
             break
 
-    return domain.CharacterExperience(current_experience=exp, maximum_experience=max_exp)
+    if db_obj.level == 0:
+        return domain.CharacterExperience(current_experience=exp, maximum_experience=max_exp)
+    
+    base = domain.exp_table[db_obj.level - 1]
+    return domain.CharacterExperience(current_experience=exp - base, maximum_experience=max_exp - base)
 
 
 
