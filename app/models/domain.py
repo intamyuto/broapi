@@ -50,7 +50,7 @@ _coeffecients = {
     'combinations': 2.470
 }
 
-exp_table = [2, 10, 25, 40, 60, 85, 110, 150, 225, 350, 555]
+exp_table = [2, 12, 37, 77, 137, 222, 332, 482, 707, 1057, 1612]
 
 class AbilityScoresDelta(BaseModel):
     strength: int | None = None
