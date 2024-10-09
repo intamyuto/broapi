@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
+from typing import Tuple
 
 import math
 import random
@@ -200,7 +201,6 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
         )
         db_player = player_scalar.one()
 
-        # energy calculation is incorrect >_<
         if db_player.energy_boost > 0:
             db_player.energy_boost = db_player.energy_boost - 1
         else:
@@ -225,25 +225,13 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
         db_match.ts_finished = ts_now
 
         db_match.loot = None
-        opponent_score_delta = 0
-        opponent_score = 0
-        if db_match.result == db.MatchResult.win:
-            player_gain = _calc_coins_gain(db_player)
-            opponent_loss = _calc_coins_loss(db_opponent)
-            opponent_score_delta = opponent_loss
 
-            db_match.loot = { 'coins': player_gain }
-            await _change_score(db_match.player_id, player_gain, session=session)
-            opponent_score = await _change_score(db_match.opponent_id, opponent_loss, session=session)
+        opponent_score, opponent_score_delta, player_score_delta = await _change_score(db_player, db_opponent, db_match.result, session=session)
+        db_match.loot = { 'coins': player_score_delta }
+
+        if db_match.result == db.MatchResult.win:
             await _change_level(db_match.player_id, amount=1, session=session)
         else:
-            player_loss = _calc_coins_loss(db_player)
-            opponent_gain = _calc_coins_gain(db_opponent)
-            opponent_score_delta = opponent_gain
-
-            db_match.loot = { 'coins': player_loss }
-            await _change_score(db_match.player_id, player_loss, session=session)
-            opponent_score = await _change_score(db_match.opponent_id, opponent_gain, session=session)
             await _change_level(db_match.opponent_id, amount=1, session=session)
         
         db_match.stats = stats 
@@ -276,31 +264,59 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
     except NoResultFound:
         raise HTTPException(status_code=404, detail="match not found")
     
-def _calc_coins_gain(player: db.PVPCharacter) -> int:
+def _calc_coins_gain(player: db.PVPCharacter, score_base: int) -> int:
     if player.level == 0:
         return 150
     elif player.level == 1:
         return 250
     else:
-        return 250 # return percent of opponent score
+        return math.floor(score_base * 0.05)
     
-def _calc_coins_loss(player: db.PVPCharacter) -> int:
+def _calc_coins_loss(player: db.PVPCharacter, score_base: int) -> int:
     if player.level == 0:
         return -30
     elif player.level == 1:
         return -50
     else:
-        return -50 # percent of opponent score
+        return math.floor(score_base * 0.05)
 
-async def _change_score(user_id: int, amount: int, session: AsyncSession) -> int:
-    user_scalar = await session.exec(
-        select(db.User).where(db.User.ref_code == str(user_id)).limit(1).options(load_only(db.User.score))
+async def _change_score(player: db.PVPCharacter, opponent: db.PVPCharacter, match_resut: db.MatchResult, session: AsyncSession) -> Tuple[int, int]:
+    player_user_scalar = await session.exec(
+        select(db.User).where(db.User.ref_code == str(player.user_id)).limit(1).options(load_only(db.User.score))
     )
-    db_user = user_scalar.one()
+    db_player_user = player_user_scalar.one()
 
-    db_user.score = db_user.score + amount
-    session.add(db_user)
-    return db_user.score
+    opponent_user_scalar = await session.exec(
+        select(db.User).where(db.User.ref_code == str(opponent.user_id)).limit(1).options(load_only(db.User.score))
+    )
+    db_opponent_user = opponent_user_scalar.one()
+
+    player_score_delta = 0
+    opponent_score_delta = 0
+    if match_resut == db.MatchResult.win:
+        player_gain = _calc_coins_gain(player, db_opponent_user.score)
+        opponent_loss = _calc_coins_loss(opponent, db_opponent_user.score)
+
+        player_score_delta = player_gain
+        opponent_score_delta = opponent_loss
+
+        db_player_user.score = db_player_user.score + player_gain
+        db_opponent_user.score = max(0, db_opponent_user.score + opponent_loss)
+    elif match_resut == db.MatchResult.lose:
+        player_loss = _calc_coins_loss(player, db_player_user.score)
+        opponent_gain = _calc_coins_gain(opponent, db_player_user.score)
+        
+        player_score_delta = player_loss
+        opponent_score_delta = opponent_gain
+        
+
+        db_player_user.score = max(0, db_player_user.score + player_loss)
+        db_opponent_user.score = db_opponent_user.score + opponent_gain
+
+
+    session.add(db_player_user)
+    session.add(db_opponent_user)
+    return db_opponent_user.score, opponent_score_delta, player_score_delta
 
 def _match_result_notification_message(player: db.PVPCharacter, opponent: db.PVPCharacter, match_result: db.MatchResult, score_delta: int, score: int) -> str:
     ts_now = datetime.now(timezone.utc)
