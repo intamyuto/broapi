@@ -97,7 +97,7 @@ async def search_match(user_id: int, session: AsyncSession = Depends(get_session
         )
         db_match = match_scalar.one_or_none()
         if not db_match:
-            opponent = await _search_opponent(player.user_id, session=session)
+            opponent = await _search_opponent(player.user_id, db_player.level, session=session)
             db_match = db.PVPMatch(
                 uuid=uuid4(),
 
@@ -113,7 +113,7 @@ async def search_match(user_id: int, session: AsyncSession = Depends(get_session
         
         ts_now = datetime.now(timezone.utc)
         if db_match.ts_updated + timedelta(minutes=30) < ts_now:
-            opponent = await _search_opponent(player.user_id, session=session)
+            opponent = await _search_opponent(player.user_id, db_player.level, session=session)
             db_match.opponent_id = opponent.user_id
             db_match.ts_updated = ts_now
             session.add(db_match)
@@ -146,6 +146,13 @@ async def skip_match(match_id: UUID, session: AsyncSession = Depends(get_session
         db_opponent = opponent_scalar.one()
         db_opponent.ts_invulnerable_until = None
 
+        player_scalar = await session.exec(
+            select(db.PVPCharacter).where(db.PVPCharacter.user_id == db_match.player_id).options(
+                load_only(db.PVPCharacter.level)
+            )
+        )
+        db_player = player_scalar.one()
+
         user_scalar = await session.exec(
             select(db.User).where(db.User.ref_code == str(db_match.player_id)).limit(1)
                 .options(
@@ -158,7 +165,7 @@ async def skip_match(match_id: UUID, session: AsyncSession = Depends(get_session
             raise HTTPException(status_code=404, detail="insufficient tickets")
         db_user.tickets -= 1
 
-        opponent = await _search_opponent(db_match.player_id, session=session)
+        opponent = await _search_opponent(db_match.player_id, db_player.level, session=session)
         db_match.ts_updated = datetime.now(timezone.utc)
         db_match.opponent_id = opponent.user_id
         
@@ -295,13 +302,17 @@ async def _change_level(user_id: int, amount: int, session: AsyncSession):
 
     session.add(db_character)
 
-async def _search_opponent(player_id: int, session: AsyncSession) -> domain.MatchCompetitioner:
+async def _search_opponent(player_id: int, player_level: int, session: AsyncSession) -> domain.MatchCompetitioner:
     sample = tablesample(db.PVPCharacter, func.bernoulli(100), name='sample', seed=func.random())
     opponent_id_scalar = await session.exec(
         select(sample.c.user_id).where(
-            and_(sample.c.user_id != player_id, 
-                or_(sample.c.ts_invulnerable_until == None, 
-                    sample.c.ts_invulnerable_until < func.now()
+            and_(sample.c.level <= player_level + 2,
+                and_(sample.c.level >= player_level - 2,
+                    and_(sample.c.user_id != player_id, 
+                        or_(sample.c.ts_invulnerable_until == None, 
+                            sample.c.ts_invulnerable_until < func.now()
+                        )
+                    )
                 )
             )
         )
