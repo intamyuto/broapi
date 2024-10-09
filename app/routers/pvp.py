@@ -212,9 +212,7 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
             db_player.ts_last_match = ts_now
 
         opponent_scalar = await session.exec(
-            select(db.PVPCharacter).where(db.PVPCharacter.user_id == db_match.opponent_id).options(
-                load_only(db.PVPCharacter.power, db.PVPCharacter.level, db.PVPCharacter.ts_defences_today, db.PVPCharacter.ts_updated)
-            )
+            select(db.PVPCharacter).where(db.PVPCharacter.user_id == db_match.opponent_id)
         )
         db_opponent = opponent_scalar.one()
 
@@ -227,28 +225,30 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
         db_match.ts_finished = ts_now
 
         db_match.loot = None
+        opponent_score_delta = 0
+        opponent_score = 0
         if db_match.result == db.MatchResult.win:
             player_gain = _calc_coins_gain(db_player)
+            opponent_loss = _calc_coins_loss(db_opponent)
+            opponent_score_delta = opponent_loss
 
             db_match.loot = { 'coins': player_gain }
             await _change_score(db_match.player_id, player_gain, session=session)
+            opponent_score = await _change_score(db_match.opponent_id, opponent_loss, session=session)
             await _change_level(db_match.player_id, amount=1, session=session)
         else:
             player_loss = _calc_coins_loss(db_player)
             opponent_gain = _calc_coins_gain(db_opponent)
+            opponent_score_delta = opponent_gain
 
             db_match.loot = { 'coins': player_loss }
             await _change_score(db_match.player_id, player_loss, session=session)
-            await _change_score(db_match.opponent_id, opponent_gain, session=session)
+            opponent_score = await _change_score(db_match.opponent_id, opponent_gain, session=session)
+            await _change_level(db_match.opponent_id, amount=1, session=session)
         
         db_match.stats = stats 
 
-        message = f'''{db_player.username} ⚔️ attacked you.  
-You lost 0 $BRO because you're still in the early levels.
-
-Don't forget to level up your stats to win and earn $BRO in fights! 👊
-'''
-
+        message = _match_result_notification_message(db_player, db_opponent, db_match.result, opponent_score_delta, opponent_score)
         background_tasks.add_task(send_notifications, db_match.opponent_id, message)
 
         #  2 hours invulnerability after defence
@@ -292,7 +292,7 @@ def _calc_coins_loss(player: db.PVPCharacter) -> int:
     else:
         return -50 # percent of opponent score
 
-async def _change_score(user_id: int, amount: int, session: AsyncSession):
+async def _change_score(user_id: int, amount: int, session: AsyncSession) -> int:
     user_scalar = await session.exec(
         select(db.User).where(db.User.ref_code == str(user_id)).limit(1).options(load_only(db.User.score))
     )
@@ -300,7 +300,37 @@ async def _change_score(user_id: int, amount: int, session: AsyncSession):
 
     db_user.score = db_user.score + amount
     session.add(db_user)
+    return db_user.score
 
+def _match_result_notification_message(player: db.PVPCharacter, opponent: db.PVPCharacter, match_result: db.MatchResult, score_delta: int, score: int) -> str:
+    ts_now = datetime.now(timezone.utc)
+    remaining_energy = _calc_remaining_energy(opponent.energy_last_match, opponent.energy_max, opponent.ts_last_match, ts_now)
+    energy = math.floor(remaining_energy) + opponent.energy_boost
+
+    if match_result == db.MatchResult.win:
+        return f'''⚔️ @{player.username} with {int(math.floor(player.power))} battle power attacked you! ⚔️  
+🏆 Winner: @{player.username}  
+📃 Result: You lost {score_delta} $BRO 🪙
+
+Your $BRO balance: {score} $BRO 🪙  
+Energy remaining: {energy} ⚡️
+
+Level up your stats to win more battles!
+
+'''
+    elif match_result == db.MatchResult.lose:
+        return f'''⚔️ @{player.username} with {int(math.floor(player.power))} battle power attacked you! ⚔️  
+🏆 Winner: @{opponent.username}  
+📃 Result: You won {score_delta} $BRO 🪙, +1 EXP
+
+Your $BRO balance: {score} $BRO 🪙  
+Energy remaining: {energy} ⚡️
+
+Level up your stats to win more battles!
+
+'''
+    else:
+        return ''
 
 async def _change_level(user_id: int, amount: int, session: AsyncSession):
     character = await session.exec(

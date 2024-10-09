@@ -37,7 +37,7 @@ async def send_notifications(user_id: int, message: str):
 def bro_button() -> InlineKeyboardBuilder:
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="BROOOO! 👊",
+        text="To battle! 👊",
         url=f'https://t.me/itsbrocoinbot/BROSKI',
     )
     return builder.as_markup()
