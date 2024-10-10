@@ -478,7 +478,19 @@ def _calc_time_to_restore(energy: float, maximum: int) -> timedelta:
     
     return timedelta(hours=(1 - (energy - math.floor(energy))) / ENERGY_RESTORE_SPEED)
 
-def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter) -> tuple[db.MatchResult, dict]:
+
+def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter,
+                            session: AsyncSession = Depends(get_session)) -> tuple[db.MatchResult, dict]:
+    """Вычисление результата матча
+
+    :param player: нападающий игрок
+    :param opponent: обороняющийся игрок
+    :param session: сессия бд
+
+    :return result: результат матча
+    :return stat: статистика
+
+    """
     champion, contestant = opponent, player
     if champion.power < contestant.power:
         champion, contestant = contestant, champion
@@ -524,8 +536,14 @@ def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter) 
     stats['dice_roll'] = f'{dice_roll:.4f}'
 
     result = db.MatchResult.lose if champion == player else db.MatchResult.win
-    if dice_roll <= p: # champion wins
+    if dice_roll <= p:  # champion wins
         result = db.MatchResult.win if champion == player else db.MatchResult.lose
+
+    match_results = session.exec(select(db.PVPMatch).where(db.PVPMatch.player_id == player.user_id)).all()
+    if len(match_results) == 1:
+        match_result = match_results[0]
+        if match_result.ts_finished is None:
+            result = db.MatchResult.win
 
     stats['result'] = result
     return result, stats
