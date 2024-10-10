@@ -370,10 +370,19 @@ async def _change_level(user_id: int, amount: int, session: AsyncSession):
 
 async def _search_opponent(player_id: int, player_level: int, session: AsyncSession) -> domain.MatchCompetitioner:
     sample = tablesample(db.PVPCharacter, func.bernoulli(100), name='sample', seed=func.random())
+
+    min_level = 0
+    if player_level == 1:
+        min_level = 1
+    elif player_level == 2:
+        min_level = 1
+    else:
+        min_level = player_level - 2
+
     opponent_id_scalar = await session.exec(
         select(sample.c.user_id).where(
             and_(sample.c.level <= player_level + 2,
-                and_(sample.c.level >= player_level - 2,
+                and_(sample.c.level >= min_level,
                     and_(sample.c.user_id != player_id, 
                         or_(sample.c.ts_invulnerable_until == None, 
                             sample.c.ts_invulnerable_until < func.now()
