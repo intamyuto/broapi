@@ -217,7 +217,7 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
         db_opponent = opponent_scalar.one()
 
         # battle logic (╯°□°)╯︵ ┻━┻
-        match_result, stats = _calculate_match_result(db_player, db_opponent)
+        match_result, stats = _calculate_match_result(db_player, db_opponent, session)
         # ┬─┬ノ( º _ ºノ)
 
         db_match.result = match_result
@@ -480,7 +480,7 @@ def _calc_time_to_restore(energy: float, maximum: int) -> timedelta:
 
 
 def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter,
-                            session: AsyncSession = Depends(get_session)) -> tuple[db.MatchResult, dict]:
+                            session) -> tuple[db.MatchResult, dict]:
     """Вычисление результата матча
 
     :param player: нападающий игрок
@@ -539,7 +539,7 @@ def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter,
     if dice_roll <= p:  # champion wins
         result = db.MatchResult.win if champion == player else db.MatchResult.lose
 
-    match_results = session.exec(select(db.PVPMatch).where(db.PVPMatch.player_id == player.user_id)).all()
+    match_results = session.exec(select(db.PVPMatch).where(db.PVPMatch.player_id == player.user_id).limit(2)).all()
     if len(match_results) == 1:
         match_result = match_results[0]
         if match_result.ts_finished is None:
