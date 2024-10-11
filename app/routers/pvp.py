@@ -483,6 +483,9 @@ def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter) 
     if champion.power < contestant.power:
         champion, contestant = contestant, champion
 
+    champion.power = math.floor(champion.power)
+    contestant.power = math.floor(contestant.power)
+
     gap = (champion.power - contestant.power) / champion.power
 
     alpha, p = 1.0, .5
@@ -502,8 +505,8 @@ def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter) 
         'player_id': player.user_id,
         'opponent_id': opponent.user_id,
         'champion': champion.user_id,
-        'champion_power': f'champion.power:.4f',
-        'contestant_power': f'contestant.power:.4f',
+        'champion_power': f'{champion.power}',
+        'contestant_power': f'{contestant.power}',
         'gap': f'{gap:.4f}',
         'alpha': f'{alpha:.2f}'
     }
