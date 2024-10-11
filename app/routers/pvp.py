@@ -217,7 +217,7 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
         db_opponent = opponent_scalar.one()
 
         # battle logic (╯°□°)╯︵ ┻━┻
-        match_result, stats = _calculate_match_result(db_player, db_opponent, session)
+        match_result, stats = await _calculate_match_result(db_match, db_player, db_opponent, session)
         # ┬─┬ノ( º _ ºノ)
 
         db_match.result = match_result
@@ -479,10 +479,11 @@ def _calc_time_to_restore(energy: float, maximum: int) -> timedelta:
     return timedelta(hours=(1 - (energy - math.floor(energy))) / ENERGY_RESTORE_SPEED)
 
 
-def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter,
-                            session) -> tuple[db.MatchResult, dict]:
+async def _calculate_match_result(match: db.PVPMatch, player: db.PVPCharacter, opponent: db.PVPCharacter,
+                            session: AsyncSession) -> tuple[db.MatchResult, dict]:
     """Вычисление результата матча
 
+    :param match: текущий матч
     :param player: нападающий игрок
     :param opponent: обороняющийся игрок
     :param session: сессия бд
@@ -491,6 +492,13 @@ def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter,
     :return stat: статистика
 
     """
+
+    count_scalar = await session.exec(
+        select(func.count('*')).where(db.PVPMatch.player_id == player.user_id, db.PVPMatch.uuid != match.uuid).select_from(db.PVPMatch)
+    )
+    if count_scalar.one() == 0:
+        return db.MatchResult.win, {'result': db.MatchResult.win, 'comment': 'first match'}
+
     champion, contestant = opponent, player
     if champion.power < contestant.power:
         champion, contestant = contestant, champion
@@ -538,12 +546,6 @@ def _calculate_match_result(player: db.PVPCharacter, opponent: db.PVPCharacter,
     result = db.MatchResult.lose if champion == player else db.MatchResult.win
     if dice_roll <= p:  # champion wins
         result = db.MatchResult.win if champion == player else db.MatchResult.lose
-
-    match_results = session.exec(select(db.PVPMatch).where(db.PVPMatch.player_id == player.user_id).limit(2)).all()
-    if len(match_results) == 1:
-        match_result = match_results[0]
-        if match_result.ts_finished is None:
-            result = db.MatchResult.win
 
     stats['result'] = result
     return result, stats
