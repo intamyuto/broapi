@@ -226,13 +226,13 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
 
         db_match.loot = None
 
-        opponent_score, opponent_score_delta, player_score_delta = await _change_score(db_player, db_opponent, db_match.result, session=session)
+        opponent_score, opponent_score_delta, player_score_delta = await _change_score(db_player, db_opponent, db_match.result, session)
         db_match.loot = { 'coins': player_score_delta }
 
         if db_match.result == db.MatchResult.win:
-            await _change_level(db_match.player_id, amount=1, session=session)
+            await _change_level(db_player, db_opponent)
         else:
-            await _change_level(db_match.opponent_id, amount=1, session=session)
+            await _change_level(db_opponent, db_player)
         
         db_match.stats = stats 
 
@@ -313,9 +313,6 @@ async def _change_score(player: db.PVPCharacter, opponent: db.PVPCharacter, matc
         db_player_user.score = max(0, db_player_user.score + player_loss)
         db_opponent_user.score = db_opponent_user.score + opponent_gain
 
-
-    session.add(db_player_user)
-    session.add(db_opponent_user)
     return db_opponent_user.score, opponent_score_delta, player_score_delta
 
 def _match_result_notification_message(player: db.PVPCharacter, opponent: db.PVPCharacter, match_result: db.MatchResult, score_delta: int, score: int) -> str:
@@ -348,25 +345,27 @@ Level up your stats to win more battles!
     else:
         return ''
 
-async def _change_level(user_id: int, amount: int, session: AsyncSession):
-    character = await session.exec(
-        select(db.PVPCharacter).where(db.PVPCharacter.user_id == user_id).options(
-            load_only(db.PVPCharacter.experience, db.PVPCharacter.level)
-        )
-    )
-    db_character = character.one()
-    current_exp = db_character.experience + amount
-    db_character.experience = current_exp
+async def _change_level(player: db.PVPCharacter, opponent: db.PVPCharacter):
+    experience_gain = 0
+    if player.level > opponent.level:
+        experience_gain = 0
+    elif player.level == opponent.level:
+        experience_gain = 1
+    elif opponent.level > player.level and opponent.power > player.power:
+        experience_gain = 3
+    elif opponent.level > player.level:
+        experience_gain = 2
+
+    current_exp = player.experience + experience_gain
+    player.experience = current_exp
 
     for i in domain.exp_table:
         if current_exp - i >= 0:
             pass
         else:
             current_lvl = domain.exp_table.index(i)
-            db_character.level = current_lvl
+            player.level = current_lvl
             break
-
-    session.add(db_character)
 
 async def _search_opponent(player_id: int, player_level: int, session: AsyncSession) -> domain.MatchCompetitioner:
     sample = tablesample(db.PVPCharacter, func.bernoulli(100), name='sample', seed=func.random())
