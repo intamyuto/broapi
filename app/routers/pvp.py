@@ -265,7 +265,7 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
         raise HTTPException(status_code=404, detail="match not found")
     
 def _calc_coins_gain_loss(opponent: db.PVPCharacter, score_base: int) -> Tuple[int, int]:
-    amount = math.floor(abs(score_base) * 0.05)
+    amount = math.floor(max(0, score_base) * 0.05)
     if opponent.level == 0:
         return 150, -30
     elif opponent.level == 1:
