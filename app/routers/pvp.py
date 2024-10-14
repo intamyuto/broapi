@@ -264,21 +264,14 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
     except NoResultFound:
         raise HTTPException(status_code=404, detail="match not found")
     
-def _calc_coins_gain(player: db.PVPCharacter, score_base: int) -> int:
-    if player.level == 0:
-        return 150
-    elif player.level == 1:
-        return 250
+def _calc_coins_gain_loss(opponent: db.PVPCharacter, score_base: int) -> Tuple[int, int]:
+    amount = math.floor(abs(score_base) * 0.05)
+    if opponent.level == 0:
+        return 150, -30
+    elif opponent.level == 1:
+        return 250, -50
     else:
-        return math.floor(abs(score_base) * 0.05)
-    
-def _calc_coins_loss(player: db.PVPCharacter, score_base: int) -> int:
-    if player.level == 0:
-        return -30
-    elif player.level == 1:
-        return -50
-    else:
-        return -1 * math.floor(abs(score_base) * 0.05)
+        return amount, -1 * amount
 
 async def _change_score(player: db.PVPCharacter, opponent: db.PVPCharacter, match_resut: db.MatchResult, session: AsyncSession) -> Tuple[int, int]:
     player_user_scalar = await session.exec(
@@ -294,24 +287,12 @@ async def _change_score(player: db.PVPCharacter, opponent: db.PVPCharacter, matc
     player_score_delta = 0
     opponent_score_delta = 0
     if match_resut == db.MatchResult.win:
-        player_gain = _calc_coins_gain(player, db_opponent_user.score)
-        opponent_loss = _calc_coins_loss(opponent, db_opponent_user.score)
-
-        player_score_delta = player_gain
-        opponent_score_delta = opponent_loss
-
-        db_player_user.score = db_player_user.score + player_gain
-        db_opponent_user.score = max(0, db_opponent_user.score + opponent_loss)
+        player_score_delta, opponent_score_delta = _calc_coins_gain_loss(opponent, db_opponent_user.score)
     elif match_resut == db.MatchResult.lose:
-        player_loss = _calc_coins_loss(player, db_player_user.score)
-        opponent_gain = _calc_coins_gain(opponent, db_player_user.score)
-        
-        player_score_delta = player_loss
-        opponent_score_delta = opponent_gain
-        
+        opponent_score_delta, player_score_delta  = _calc_coins_gain_loss(player, db_player_user.score)
 
-        db_player_user.score = max(0, db_player_user.score + player_loss)
-        db_opponent_user.score = db_opponent_user.score + opponent_gain
+    db_player_user.score = max(0, db_player_user.score + player_score_delta)
+    db_opponent_user.score = max(0, db_opponent_user.score + opponent_score_delta)
 
     return db_opponent_user.score, opponent_score_delta, player_score_delta
 
