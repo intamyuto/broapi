@@ -270,7 +270,7 @@ def _calc_coins_gain(player: db.PVPCharacter, score_base: int) -> int:
     elif player.level == 1:
         return 250
     else:
-        return math.floor(score_base * 0.05)
+        return math.floor(abs(score_base) * 0.05)
     
 def _calc_coins_loss(player: db.PVPCharacter, score_base: int) -> int:
     if player.level == 0:
@@ -278,7 +278,7 @@ def _calc_coins_loss(player: db.PVPCharacter, score_base: int) -> int:
     elif player.level == 1:
         return -50
     else:
-        return -1 * math.floor(score_base * 0.05)
+        return -1 * math.floor(abs(score_base) * 0.05)
 
 async def _change_score(player: db.PVPCharacter, opponent: db.PVPCharacter, match_resut: db.MatchResult, session: AsyncSession) -> Tuple[int, int]:
     player_user_scalar = await session.exec(
