@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 from uuid import UUID
 from enum import Enum
 
@@ -118,12 +118,22 @@ class CharacterEnergy(BaseModel):
     maximum: int
     time_to_restore: timedelta
 
+class CharacterProfilePremium(BaseModel):
+    active: bool
+    until: date
+
 class CharacterProfile(BaseModel):
     abilities: AbilityScores
     energy: CharacterEnergy
     level: int
     experience: CharacterExperience
     power: int
+    premium: Optional[CharacterProfilePremium] = Field(None)
+
+class PVPStats(BaseModel):
+    total: int
+    won: int
+    loot: int
 
 class MatchCompetitioner(BaseModel):
     user_id: int
@@ -131,6 +141,8 @@ class MatchCompetitioner(BaseModel):
     level: int
     power: int
     abilities: AbilityScores
+    premium: bool
+    stats: Optional[PVPStats] = Field(None)
 
 class PVPMatch(BaseModel):
     match_id: UUID

@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from sqlalchemy.orm import load_only
 from sqlalchemy.exc import NoResultFound
-from sqlalchemy import tablesample, func, or_, and_
+from sqlalchemy import tablesample, func, or_, and_, case, Integer
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 
@@ -87,18 +87,18 @@ async def search_match(user_id: int, session: AsyncSession = Depends(get_session
     try:
         player_scalar = await session.exec(
             select(db.PVPCharacter).where(db.PVPCharacter.user_id==user_id).options(
-                load_only(db.PVPCharacter.user_id, db.PVPCharacter.username, db.PVPCharacter.level, db.PVPCharacter.abilities, db.PVPCharacter.power)
+                load_only(db.PVPCharacter.user_id, db.PVPCharacter.username, db.PVPCharacter.level, db.PVPCharacter.abilities, db.PVPCharacter.power, db.PVPCharacter.ts_premium_until)
             )
         )
         db_player = player_scalar.one()
-        player = _convert_to_match_competitioner(db_player)
+        player =  await _convert_to_match_competitioner(db_player, is_premium(db_player), session=session)
 
         match_scalar = await session.exec(
             select(db.PVPMatch).where(db.PVPMatch.player_id==user_id, db.PVPMatch.ts_finished==None)
         )
         db_match = match_scalar.one_or_none()
         if not db_match:
-            opponent = await _search_opponent(player.user_id, db_player.level, session=session)
+            opponent = await _search_opponent(player.user_id, db_player.level, is_premium(db_player), session=session)
             db_match = db.PVPMatch(
                 uuid=uuid4(),
 
@@ -114,18 +114,18 @@ async def search_match(user_id: int, session: AsyncSession = Depends(get_session
         
         ts_now = datetime.now(timezone.utc)
         if db_match.ts_updated + timedelta(minutes=30) < ts_now:
-            opponent = await _search_opponent(player.user_id, db_player.level, session=session)
+            opponent = await _search_opponent(player.user_id, db_player.level, is_premium(db_player), session=session)
             db_match.opponent_id = opponent.user_id
             db_match.ts_updated = ts_now
             session.add(db_match)
 
         opponent_scalar = await session.exec(
             select(db.PVPCharacter).where(db.PVPCharacter.user_id == db_match.opponent_id).options(
-                    load_only(db.PVPCharacter.user_id, db.PVPCharacter.username, db.PVPCharacter.level, db.PVPCharacter.abilities, db.PVPCharacter.power)
+                    load_only(db.PVPCharacter.user_id, db.PVPCharacter.username, db.PVPCharacter.level, db.PVPCharacter.abilities, db.PVPCharacter.power, db.PVPCharacter.ts_premium_until)
                 )
             )
         db_opponent = opponent_scalar.one()
-        opponent = _convert_to_match_competitioner(db_opponent)
+        opponent = await _convert_to_match_competitioner(db_opponent, is_premium(db_player), session=session)
         await session.commit()
         return domain.PVPMatch(match_id=db_match.uuid, player=player, opponent=opponent)
     except NoResultFound:
@@ -149,7 +149,7 @@ async def skip_match(match_id: UUID, session: AsyncSession = Depends(get_session
 
         player_scalar = await session.exec(
             select(db.PVPCharacter).where(db.PVPCharacter.user_id == db_match.player_id).options(
-                load_only(db.PVPCharacter.level)
+                load_only(db.PVPCharacter.level, db.PVPCharacter.ts_premium_until)
             )
         )
         db_player = player_scalar.one()
@@ -166,7 +166,7 @@ async def skip_match(match_id: UUID, session: AsyncSession = Depends(get_session
             raise HTTPException(status_code=400, detail="insufficient coins")
         db_user.score -= 50
 
-        opponent = await _search_opponent(db_match.player_id, db_player.level, session=session)
+        opponent = await _search_opponent(db_match.player_id, db_player.level, is_premium(db_player), session=session)
         db_match.ts_updated = datetime.now(timezone.utc)
         db_match.opponent_id = opponent.user_id
         
@@ -204,7 +204,11 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
         if db_player.energy_boost > 0:
             db_player.energy_boost = db_player.energy_boost - 1
         else:
-            energy = _calc_remaining_energy(db_player.energy_last_match, db_player.energy_max, db_player.ts_last_match, ts_now)
+            restore_speed = ENERGY_RESTORE_SPEED
+            if is_premium(db_player):
+                restore_speed = ENERGY_RESTORE_SPEED_PREMIUM
+
+            energy = _calc_remaining_energy(db_player.energy_last_match, db_player.energy_max, restore_speed, db_player.ts_last_match, ts_now)
             if energy < 1.0:
                 raise HTTPException(status_code=400, detail="insufficient energy")
 
@@ -298,7 +302,12 @@ async def _change_score(player: db.PVPCharacter, opponent: db.PVPCharacter, matc
 
 def _match_result_notification_message(player: db.PVPCharacter, opponent: db.PVPCharacter, match_result: db.MatchResult, score_delta: int, score: int) -> str:
     ts_now = datetime.now(timezone.utc)
-    remaining_energy = _calc_remaining_energy(opponent.energy_last_match, opponent.energy_max, opponent.ts_last_match, ts_now)
+
+    restore_speed = ENERGY_RESTORE_SPEED
+    if is_premium(opponent):
+        restore_speed = ENERGY_RESTORE_SPEED_PREMIUM
+
+    remaining_energy = _calc_remaining_energy(opponent.energy_last_match, opponent.energy_max, restore_speed, opponent.ts_last_match, ts_now)
     energy = math.floor(remaining_energy) + opponent.energy_boost
 
     if match_result == db.MatchResult.win:
@@ -348,7 +357,7 @@ async def _change_level(player: db.PVPCharacter, opponent: db.PVPCharacter):
             player.level = current_lvl
             break
 
-async def _search_opponent(player_id: int, player_level: int, session: AsyncSession) -> domain.MatchCompetitioner:
+async def _search_opponent(player_id: int, player_level: int, is_premium: bool, session: AsyncSession) -> domain.MatchCompetitioner:
     sample = tablesample(db.PVPCharacter, func.bernoulli(100), name='sample', seed=func.random())
 
     min_level = 0
@@ -381,7 +390,7 @@ async def _search_opponent(player_id: int, player_level: int, session: AsyncSess
         select(db.PVPCharacter)
             .where(db.PVPCharacter.user_id == opponent_id)
             .options(
-                load_only(db.PVPCharacter.user_id, db.PVPCharacter.username, db.PVPCharacter.level, db.PVPCharacter.abilities, db.PVPCharacter.power, db.PVPCharacter.ts_invulnerable_until)
+                load_only(db.PVPCharacter.user_id, db.PVPCharacter.username, db.PVPCharacter.level, db.PVPCharacter.abilities, db.PVPCharacter.power, db.PVPCharacter.ts_invulnerable_until, db.PVPCharacter.ts_premium_until)
             )
         )
     db_opponent = opponent_scalar.one()
@@ -393,14 +402,26 @@ async def _search_opponent(player_id: int, player_level: int, session: AsyncSess
     db_opponent.ts_updated = ts_now
     session.add(db_opponent)
 
-    return _convert_to_match_competitioner(db_opponent)
+    return await _convert_to_match_competitioner(db_opponent, is_premium, session=session)
 
 def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfile:
     ts_now = datetime.now(timezone.utc)
-    remaining_energy = _calc_remaining_energy(db_obj.energy_last_match, db_obj.energy_max, db_obj.ts_last_match, ts_now)
-    time_to_restore = _calc_time_to_restore(remaining_energy, db_obj.energy_max)
+
+    premium = is_premium(db_obj)
+
+    energy_max = 2
+    if premium:
+        energy_max = 5
+
+    restore_speed = ENERGY_RESTORE_SPEED
+    if premium:
+        restore_speed = ENERGY_RESTORE_SPEED_PREMIUM
+
+    remaining_energy = _calc_remaining_energy(db_obj.energy_last_match, energy_max, restore_speed, db_obj.ts_last_match, ts_now)
+    time_to_restore = _calc_time_to_restore(remaining_energy, energy_max, restore_speed)
     experience = _calc_exp(db_obj)
-    return domain.CharacterProfile(
+
+    profile = domain.CharacterProfile(
         user_id=db_obj.user_id,
         username=db_obj.username,
         level=db_obj.level, 
@@ -413,6 +434,14 @@ def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfi
             time_to_restore=time_to_restore,
         )
     )
+
+    if premium:
+        profile.premium = domain.CharacterProfilePremium(
+            active=True,
+            until=db_obj.ts_premium_until.date() + timedelta(days=1)
+        )
+
+    return profile
 
 
 def _calc_exp(db_obj: db.PVPCharacter) -> domain.CharacterExperience:
@@ -431,32 +460,58 @@ def _calc_exp(db_obj: db.PVPCharacter) -> domain.CharacterExperience:
     base = domain.exp_table[db_obj.level - 1]
     return domain.CharacterExperience(current_experience=exp - base, maximum_experience=max_exp - base)
 
+async def _collect_stats(db_obj: db.PVPCharacter, session: AsyncSession):
+    scalar = await session.exec(
+        select(
+                func.count('*').label('total'),
+                func.sum(
+                    case(
+                        (and_(db.PVPMatch.player_id == db_obj.user_id, db.PVPMatch.result == db.MatchResult.win), 1),
+                        (and_(db.PVPMatch.opponent_id == db_obj.user_id, db.PVPMatch.result == db.MatchResult.lose), 1),
+                        else_=0
+                    )
+                ).label('won'),
+                func.sum(db.PVPMatch.loot['coins'].cast(Integer)).label('loot')
+            )
+            .select_from(db.PVPMatch)
+            .where(
+                or_(db.PVPMatch.player_id == db_obj.user_id,
+                    db.PVPMatch.opponent_id == db_obj.user_id)
+            )
+    )
+    total, won, loot = scalar.one()
 
+    return domain.PVPStats(total=total, won=won, loot=loot)
 
-def _convert_to_match_competitioner(db_obj: db.PVPCharacter) -> domain.MatchCompetitioner:
-    return domain.MatchCompetitioner(
+async def _convert_to_match_competitioner(db_obj: db.PVPCharacter, player_has_premium: bool, session: AsyncSession) -> domain.MatchCompetitioner:
+    competitioner = domain.MatchCompetitioner(
         user_id=db_obj.user_id,
         username=db_obj.username,
         level=db_obj.level,
         power=math.floor(db_obj.power),
         abilities=domain.AbilityScores(**db_obj.abilities),
+        premium=is_premium(db_obj)
     )
+    
+    if player_has_premium:
+        competitioner.stats = await _collect_stats(db_obj, session=session)
+
+    return competitioner
 
 ENERGY_RESTORE_SPEED = 4 # per hour
+ENERGY_RESTORE_SPEED_PREMIUM = 12 # per hour
 
-def _calc_remaining_energy(energy_base: float, energy_max: int, ts_base: datetime, ts_now: datetime) -> float:
+def _calc_remaining_energy(energy_base: float, energy_max: int, restore_speed: int, ts_base: datetime, ts_now: datetime) -> float:
     return min(
-        energy_base + ((ts_now - ts_base) / timedelta(hours=1)) * ENERGY_RESTORE_SPEED, 
+        energy_base + ((ts_now - ts_base) / timedelta(hours=1)) * restore_speed, 
         energy_max
     )
 
-
-
-def _calc_time_to_restore(energy: float, maximum: int) -> timedelta:
+def _calc_time_to_restore(energy: float, maximum: int, restore_speed: int) -> timedelta:
     if energy >= maximum:
         return timedelta()
     
-    return timedelta(hours=(1 - (energy - math.floor(energy))) / ENERGY_RESTORE_SPEED)
+    return timedelta(hours=(1 - (energy - math.floor(energy))) / restore_speed)
 
 
 async def _calculate_match_result(match: db.PVPMatch, player: db.PVPCharacter, opponent: db.PVPCharacter,
@@ -529,3 +584,7 @@ async def _calculate_match_result(match: db.PVPMatch, player: db.PVPCharacter, o
 
     stats['result'] = result
     return result, stats
+
+
+def is_premium(player: db.PVPCharacter) -> bool:
+    return player.ts_premium_until is not None and datetime.now(timezone.utc).date() < player.ts_premium_until.date() + timedelta(days=1)

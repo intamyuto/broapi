@@ -1,10 +1,11 @@
 from uuid import UUID, uuid4
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 import enum
 
 from sqlmodel import SQLModel, Field, MetaData, Enum
-from sqlalchemy import JSON, Column, DateTime, BigInteger
+from sqlalchemy import JSON, Column, DateTime, BigInteger, func
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.dialects.postgresql import JSONB
 
 
@@ -50,6 +51,8 @@ class PVPCharacter(SQLModel, table=True):
 
     ts_updated: datetime = Field(sa_column=Column(DateTime(timezone=True), nullable=False))
 
+    ts_premium_until: datetime | None = Field(sa_column=Column(DateTime(timezone=True), nullable=True))
+
     abilities: dict = Field(sa_type=JSONB, nullable=False)
     level: int
     experience: int
@@ -62,7 +65,7 @@ class PVPCharacter(SQLModel, table=True):
 
     ts_invulnerable_until: datetime | None = Field(sa_column=Column(DateTime(timezone=True), nullable=True))
     ts_defences_today: int 
-
+    
 class MatchResult(str, enum.Enum):
     win = 'win'
     lose = 'lose'
