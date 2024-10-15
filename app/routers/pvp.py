@@ -204,11 +204,13 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
         if db_player.energy_boost > 0:
             db_player.energy_boost = db_player.energy_boost - 1
         else:
+            energy_max = 2
             restore_speed = ENERGY_RESTORE_SPEED
             if is_premium(db_player):
+                energy_max = 5    
                 restore_speed = ENERGY_RESTORE_SPEED_PREMIUM
 
-            energy = _calc_remaining_energy(db_player.energy_last_match, db_player.energy_max, restore_speed, db_player.ts_last_match, ts_now)
+            energy = _calc_remaining_energy(db_player.energy_last_match, energy_max, restore_speed, db_player.ts_last_match, ts_now)
             if energy < 1.0:
                 raise HTTPException(status_code=400, detail="insufficient energy")
 
@@ -303,11 +305,13 @@ async def _change_score(player: db.PVPCharacter, opponent: db.PVPCharacter, matc
 def _match_result_notification_message(player: db.PVPCharacter, opponent: db.PVPCharacter, match_result: db.MatchResult, score_delta: int, score: int) -> str:
     ts_now = datetime.now(timezone.utc)
 
+    energy_max = 2
     restore_speed = ENERGY_RESTORE_SPEED
     if is_premium(opponent):
         restore_speed = ENERGY_RESTORE_SPEED_PREMIUM
+        energy_max = 5
 
-    remaining_energy = _calc_remaining_energy(opponent.energy_last_match, opponent.energy_max, restore_speed, opponent.ts_last_match, ts_now)
+    remaining_energy = _calc_remaining_energy(opponent.energy_last_match, energy_max, restore_speed, opponent.ts_last_match, ts_now)
     energy = math.floor(remaining_energy) + opponent.energy_boost
 
     if match_result == db.MatchResult.win:
@@ -410,11 +414,9 @@ def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfi
     premium = is_premium(db_obj)
 
     energy_max = 2
-    if premium:
-        energy_max = 5
-
     restore_speed = ENERGY_RESTORE_SPEED
     if premium:
+        energy_max = 5
         restore_speed = ENERGY_RESTORE_SPEED_PREMIUM
 
     remaining_energy = _calc_remaining_energy(db_obj.energy_last_match, energy_max, restore_speed, db_obj.ts_last_match, ts_now)
@@ -430,7 +432,7 @@ def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfi
         abilities=domain.AbilityScores(**db_obj.abilities),
         energy=domain.CharacterEnergy(
             remaining=math.floor(remaining_energy) + db_obj.energy_boost,
-            maximum=db_obj.energy_max,
+            maximum=energy_max,
             time_to_restore=time_to_restore,
         )
     )
