@@ -479,7 +479,12 @@ async def _collect_stats(db_obj: db.PVPCharacter, session: AsyncSession):
                         else_=0
                     )
                 ).label('won'),
-                func.sum(db.PVPMatch.loot['coins'].cast(Integer)).label('loot')
+                func.sum(
+                    case(
+                        (and_(db.PVPMatch.player_id == db_obj.user_id, db.PVPMatch.result == db.MatchResult.win), db.PVPMatch.loot['coins'].cast(Integer)),
+                        else_=0
+                    )
+                ).label('loot')
             )
             .select_from(db.PVPMatch)
             .where(
