@@ -48,9 +48,13 @@ async def get_character(user_id: int, session: AsyncSession = Depends(get_sessio
             session.add(db_character)
         except NoResultFound:
             raise HTTPException(status_code=404, detail="user not found")
+        
+    stats = None
+    if is_premium(db_character):
+        stats = await _collect_stats(db_character, session=session)
 
     await session.commit()
-    return _convert_from_db_character(db_character)
+    return _convert_from_db_character(db_character, stats)
 
 @router.post("/users/{user_id}/levelup", tags=["pvp"])
 async def level_up(user_id: int, delta: domain.AbilityScoresDelta | None = None, session: AsyncSession = Depends(get_session)) -> domain.LevelupResponse:
@@ -408,7 +412,7 @@ async def _search_opponent(player_id: int, player_level: int, is_premium: bool, 
 
     return await _convert_to_match_competitioner(db_opponent, is_premium, session=session)
 
-def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfile:
+def _convert_from_db_character(db_obj: db.PVPCharacter, stats: domain.PVPStats | None) -> domain.CharacterProfile:
     ts_now = datetime.now(timezone.utc)
 
     premium = is_premium(db_obj)
@@ -442,6 +446,8 @@ def _convert_from_db_character(db_obj: db.PVPCharacter) -> domain.CharacterProfi
             active=True,
             until=db_obj.ts_premium_until.date() + timedelta(days=1)
         )
+    
+    profile.stats = stats
 
     return profile
 

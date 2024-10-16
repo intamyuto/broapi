@@ -122,6 +122,11 @@ class CharacterProfilePremium(BaseModel):
     active: bool
     until: date
 
+class PVPStats(BaseModel):
+    total: int
+    won: int
+    loot: int
+
 class CharacterProfile(BaseModel):
     abilities: AbilityScores
     energy: CharacterEnergy
@@ -129,11 +134,7 @@ class CharacterProfile(BaseModel):
     experience: CharacterExperience
     power: int
     premium: Optional[CharacterProfilePremium] = Field(None)
-
-class PVPStats(BaseModel):
-    total: int
-    won: int
-    loot: int
+    stats: Optional[PVPStats] = Field(None)
 
 class MatchCompetitioner(BaseModel):
     user_id: int
