@@ -274,8 +274,15 @@ async def start_match(match_id: UUID, background_tasks: BackgroundTasks, session
     except NoResultFound:
         raise HTTPException(status_code=404, detail="match not found")
     
+ts_from = datetime(2024, 10, 23, 21, 0, 0, 0, tzinfo=timezone.utc)
+ts_to = datetime(2024, 10, 24, 21, 0, 0, 0, tzinfo=timezone.utc)
+    
 def _calc_coins_gain_loss(opponent: db.PVPCharacter, score_base: int) -> Tuple[int, int]:
-    amount = math.floor(max(0, score_base) * 0.05)
+    coeff = 0.05
+    if ts_from <= datetime.now(timezone.utc) < ts_to:
+        coeff = 0.10
+
+    amount = math.floor(max(0, score_base) * coeff)
     if opponent.level == 0:
         return 150, -30
     elif opponent.level == 1:
