@@ -527,6 +527,23 @@ def _calc_time_to_restore(energy: float, maximum: int, restore_speed: int) -> ti
     return timedelta(hours=(1 - (energy - math.floor(energy))) / restore_speed)
 
 
+alpha_table = [
+        (1.50, None),  # auto-win
+        (0.51, 1.746),
+        (0.49, 1.800),
+        (0.44, 1.970),
+        (0.39, 2.170),
+        (0.34, 2.400),
+        (0.29, 2.500),
+        (0.24, 2.800),
+        (0.19, 3.000),
+        (0.14, 3.500),
+        (0.09, 4.000),
+        (0.06, 4.000),
+        (0.03, 4.000),
+        (0.01, 5.000),
+    ]
+
 async def _calculate_match_result(match: db.PVPMatch, player: db.PVPCharacter, opponent: db.PVPCharacter,
                             session: AsyncSession) -> tuple[db.MatchResult, dict]:
     """Вычисление результата матча
@@ -554,21 +571,10 @@ async def _calculate_match_result(match: db.PVPMatch, player: db.PVPCharacter, o
     champion.power = math.floor(champion.power)
     contestant.power = math.floor(contestant.power)
 
-    gap = (champion.power - contestant.power) / champion.power
+    gap = champion.power / contestant.power - 1
 
-    alpha, p = 1.0, .5
-
-    if gap >= 0.75:
-        p = 1.0
-    elif gap >= 0.51:
-        alpha = 1.746
-    elif gap >= 0.49:
-        alpha = 1.8
-    elif gap > 0.44:
-        alpha = 1.9
-    else:
-        alpha = 2.0
-
+    
+    alpha = next((a for (_, (treshold, a)) in enumerate(alpha_table) if gap >= treshold), 5.000)
     stats = {
         'player_id': player.user_id,
         'opponent_id': opponent.user_id,
@@ -576,16 +582,18 @@ async def _calculate_match_result(match: db.PVPMatch, player: db.PVPCharacter, o
         'champion_power': f'{champion.power}',
         'contestant_power': f'{contestant.power}',
         'gap': f'{gap:.4f}',
-        'alpha': f'{alpha:.2f}'
+        
     }
 
-    if p == 1.0:
+    if not alpha:
         result = db.MatchResult.win if champion == player else db.MatchResult.lose
         stats['p'] = '1.0000'
         stats['result'] = result
         return result, stats
     
-    p = champion.power * ((1 + gap) ** alpha) / (champion.power + contestant.power)
+    stats['alpha'] = f'{alpha:.2f}'
+    
+    p = champion.power * ((1 + (champion.power - contestant.power) / champion.power) ** alpha) / (champion.power + contestant.power)
     dice_roll = random.random()
 
     stats['p'] = f'{p:.4f}'
