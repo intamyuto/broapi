@@ -29,6 +29,9 @@ whitelist = [
 
 @app.middleware('http')
 async def fitler_orgins(request: Request, call_next):
+    if "*" in origins:
+        return await call_next(request)
+
     origin = request.headers.get('Origin')
     if origin not in origins and request.url.path not in whitelist:
         return JSONResponse({'error': 'invalid origin'}, status_code=403)
